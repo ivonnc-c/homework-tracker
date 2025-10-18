@@ -436,7 +436,7 @@
               finally { setIsSaving(false); }
           };
           
-          const handleDelete = async () => {
+ const handleDelete = async () => {
               if (!db || !user || !modal.type || !modal.data) return;
               setIsDeleting(true);
               try {
@@ -445,13 +445,15 @@
                       const sQuery = db.collection(`artifacts/${appId}/public/data/students`).where("classId", "==", modal.data.id).where("userId", "==", user.uid);
                       const aQuery = db.collection(`artifacts/${appId}/public/data/assignments`).where("classId", "==", modal.data.id).where("userId", "==", user.uid);
                       const [sSnap, aSnap] = await Promise.all([sQuery.get(), aQuery.get()]);
-                      sSnap.forEach(d => batch.delete(d.ref)); aSnap.forEach(d => batch.delete(d.ref));
+                      sSnap.forEach(d => batch.delete(d.ref)); 
+                      aSnap.forEach(d => batch.delete(d.ref));
                       batch.delete(db.doc(`artifacts/${appId}/public/data/classes/${modal.data.id}`));
                       
-                      batch.delete(db.doc(`artifacts/${appId}/public/publicData/${modal.data.id}`));
+                      // 【⭐️ 關鍵修正 ⭐️】修正公開快照的刪除路徑
+                      batch.delete(db.doc(`artifacts/${appId}/public/publicData/${modal.data.id}`)); 
 
                       await batch.commit();
-                      setActiveClassId(null);
+                      setActiveClassId(classes.length > 1 ? classes.filter(c => c.id !== modal.data.id)[0]?.id || null : null); // Go to another class if possible
                   } else if (modal.type === 'student') {
                     await db.doc(`artifacts/${appId}/public/data/students/${modal.data.id}`).delete();
                   } else if (modal.type === 'assignment') { 
@@ -467,9 +469,15 @@
                       await batch.commit();
                   }
                   setModal({ type: null, data: null });
-              } catch (error) { console.error("刪除失敗:", error); showNotification(`刪除失敗: ${error.message}`); } 
-              finally { setIsDeleting(false); }
+              } catch (error) { 
+                  console.error("刪除失敗:", error); 
+                  // 提供更詳細的錯誤訊息給使用者
+                  showNotification(`刪除失敗: ${error.message}`); 
+              } finally { 
+                  setIsDeleting(false); 
+              }
           };
+
 
           const handleClearCompletedAssignments = async () => {
               if (!db || completedAssignments.length === 0) return;

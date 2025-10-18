@@ -268,7 +268,7 @@
                   }
                   setLoading(p => ({ ...p, classes: false }));
               }, err => {
-                  console.error("班級監聽失败:", err);
+                  console.error("班級監聽失敗:", err);
                   setLoading(p => ({ ...p, classes: false }));
               });
               return () => unsub();
@@ -294,8 +294,8 @@
                   });
                   setStudents(fetchedStudents);
               }, err => {
-                  console.error("學生資料監聽失败:", err);
-                  showNotification('讀取學生資料失败。');
+                  console.error("學生資料監聽失敗:", err);
+                  showNotification('讀取學生資料失敗。');
                   setLoading(p => ({ ...p, data: false }));
               });
 
@@ -304,8 +304,8 @@
                   setAssignments(fetchedAssignments);
                   setLoading(p => ({ ...p, data: false }));
               }, err => {
-                  console.error("作業資料監聽失败:", err);
-                  showNotification('讀取作業資料失败。');
+                  console.error("作業資料監聽失敗:", err);
+                  showNotification('讀取作業資料失敗。');
                   setLoading(p => ({ ...p, data: false }));
               });
               
@@ -358,7 +358,7 @@
               navigator.clipboard.writeText(text).then(() => {
                 showNotification('成功複製到剪貼簿！');
               }, () => {
-                showNotification('複製失败，請手動複製。');
+                showNotification('複製失敗，請手動複製。');
               });
           };
 
@@ -389,8 +389,8 @@
                   await publicDocRef.set(publicDataPayload);
                   showNotification(`成功更新「${activeClassName}」的公開頁面！`);
               } catch (error) {
-                  console.error("發布公開資料失败:", error);
-                  showNotification(`發布失败: ${error.message}`);
+                  console.error("發布公開資料失敗:", error);
+                  showNotification(`發布失敗: ${error.message}`);
               } finally {
                   setLoading(p => ({ ...p, publishing: false }));
               }
@@ -436,7 +436,7 @@
                       }
                   }
                   setModal({ type: null, data: null });
-              } catch (error) { console.error("儲存失败:", error); showNotification(`儲存失败: ${error.message}`); } 
+              } catch (error) { console.error("儲存失敗:", error); showNotification(`儲存失敗: ${error.message}`); } 
               finally { setIsSaving(false); }
           };
           
@@ -445,40 +445,43 @@
               setIsDeleting(true);
               try {
                   if (modal.type === 'class') {
-                      const batch = db.batch();
-                      const classIdToDelete = modal.data.id; // 先取得班級 ID
-
-                      // 1. 查詢並準備刪除該班級下的所有學生
-                      const sQuery = db.collection(`artifacts/${appId}/public/data/students`).where("classId", "==", classIdToDelete).where("userId", "==", user.uid);
-                      // 2. 查詢並準備刪除該班級下的所有作業
-                      const aQuery = db.collection(`artifacts/${appId}/public/data/assignments`).where("classId", "==", classIdToDelete).where("userId", "==", user.uid);
-                      
-                      // 平行執行查詢
-                      const [sSnap, aSnap] = await Promise.all([sQuery.get(), aQuery.get()]);
-                      
-                      // 將要刪除的文件加入批次處理
-                      sSnap.forEach(d => batch.delete(d.ref)); 
-                      aSnap.forEach(d => batch.delete(d.ref));
-                      
-                      // 3. 準備刪除班級本身的文件
-                      batch.delete(db.doc(`artifacts/${appId}/public/data/classes/${classIdToDelete}`));
-                      
                       // ==================
                       // 🔧【權限修正】
-                      // 不直接刪除公開文件(權限不足)，而是將其清空 (set 權限是足夠的)
+                      // 拆分批次操作，避免安全規則衝突
                       // ==================
+                      const classIdToDelete = modal.data.id;
+                      
+                      // --- 步驟 1：批次處理學生、作業、公開頁面 ---
+                      const batch1 = db.batch(); 
+                      
+                      // 1. 查詢學生和作業
+                      const sQuery = db.collection(`artifacts/${appId}/public/data/students`).where("classId", "==", classIdToDelete).where("userId", "==", user.uid);
+                      const aQuery = db.collection(`artifacts/${appId}/public/data/assignments`).where("classId", "==", classIdToDelete).where("userId", "==", user.uid);
+                      
+                      const [sSnap, aSnap] = await Promise.all([sQuery.get(), aQuery.get()]);
+                      
+                      // 2. 加入批次：刪除所有學生和作業
+                      sSnap.forEach(d => batch1.delete(d.ref)); 
+                      aSnap.forEach(d => batch1.delete(d.ref));
+                      
+                      // 3. 加入批次：清空(set)公開頁面
+                      // (因為 data/classes 文件此時還在，權限檢查會通過)
                       const publicDocRef = db.doc(`artifacts/${appId}/publicData/${classIdToDelete}`);
-                      batch.set(publicDocRef, { 
+                      batch1.set(publicDocRef, { 
                           className: `${modal.data.name} (已刪除)`, 
                           students: [], 
                           assignments: [], 
                           lastUpdated: firebase.firestore.FieldValue.serverTimestamp() 
                       });
 
-                      // 5. 執行所有操作
-                      await batch.commit();
+                      // 4. 執行第一批次
+                      await batch1.commit();
                       
-                      // 刪除後自動切換到另一個班級 (如果有的話)
+                      // --- 步驟 2：單獨刪除私有的班級文件 ---
+                      // (在第一批次成功後才執行)
+                      await db.doc(`artifacts/${appId}/public/data/classes/${classIdToDelete}`).delete();
+
+                      // --- 步驟 3：收尾 ---
                       const remainingClasses = classes.filter(c => c.id !== classIdToDelete);
                       setActiveClassId(remainingClasses.length > 0 ? remainingClasses[0].id : null); 
                       
@@ -515,8 +518,8 @@
                   setModal({ type: null, data: null });
 
               } catch (error) { 
-                  console.error("刪除失败:", error); 
-                  showNotification(`刪除失败: ${error.message}`); 
+                  console.error("刪除失敗:", error); 
+                  showNotification(`刪除失敗: ${error.message}`); 
               } finally { 
                   setIsDeleting(false); 
               }
@@ -541,8 +544,8 @@
                   await batch.commit();
                   showNotification(`成功清除了 ${assignmentIdsToDelete.length} 個已完成的作業！`);
               } catch (error) {
-                  console.error("清除已完成作業失败:", error);
-                  showNotification("清除失败，請稍後再試。");
+                  console.error("清除已完成作業失敗:", error);
+                  showNotification("清除失敗，請稍後再試。");
               } finally {
                   setIsDeleting(false);
                   setIsClearCompletedModalOpen(false);
@@ -588,8 +591,8 @@
                   await batch.commit();
                   showNotification(`已成功更新作業順序！`);
               } catch (error) {
-                  console.error("更新作業順序失败:", error);
-                  showNotification("更新作業順序失败。");
+                  console.error("更新作業順序失敗:", error);
+                  showNotification("更新作業順序失敗。");
               }
           };
 
@@ -599,11 +602,11 @@
               try {
                   await auth.signInWithPopup(provider);
               } catch (error) {
-                  console.error("Google 登入失败:", error);
+                  console.error("Google 登入失敗:", error);
                   if (error.code === 'auth/operation-not-supported-in-this-environment') {
                       setLoginError("Google 登入無法在目前預覽環境中使用，請在部署後的正式網站上操作。");
                   } else {
-                      setLoginError(`登入失败: ${error.message}`);
+                      setLoginError(`登入失敗: ${error.message}`);
                   }
               }
           };
@@ -612,7 +615,7 @@
               try {
                   await auth.signOut();
               } catch (error) {
-                  console.error("登出失败:", error);
+                  console.error("登出失敗:", error);
               }
           };
           

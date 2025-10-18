@@ -228,9 +228,7 @@
                   setIsVisitorMode(true);
                   setLoading(p => ({...p, auth: false, data: true}));
                   
-                  // ==================
-                  // 🔧 修正 #1：移除 /public/
-                  // ==================
+                  // 修正 #1：路徑已修正
                   const publicDocRef = firestoreInstance.doc(`artifacts/${appId}/publicData/${classIdFromUrl}`);
                   
                   publicDocRef.get().then(doc => {
@@ -270,7 +268,7 @@
                   }
                   setLoading(p => ({ ...p, classes: false }));
               }, err => {
-                  console.error("班級監聽失敗:", err);
+                  console.error("班級監聽失败:", err);
                   setLoading(p => ({ ...p, classes: false }));
               });
               return () => unsub();
@@ -296,8 +294,8 @@
                   });
                   setStudents(fetchedStudents);
               }, err => {
-                  console.error("學生資料監聽失敗:", err);
-                  showNotification('讀取學生資料失敗。');
+                  console.error("學生資料監聽失败:", err);
+                  showNotification('讀取學生資料失败。');
                   setLoading(p => ({ ...p, data: false }));
               });
 
@@ -306,8 +304,8 @@
                   setAssignments(fetchedAssignments);
                   setLoading(p => ({ ...p, data: false }));
               }, err => {
-                  console.error("作業資料監聽失敗:", err);
-                  showNotification('讀取作業資料失敗。');
+                  console.error("作業資料監聽失败:", err);
+                  showNotification('讀取作業資料失败。');
                   setLoading(p => ({ ...p, data: false }));
               });
               
@@ -360,7 +358,7 @@
               navigator.clipboard.writeText(text).then(() => {
                 showNotification('成功複製到剪貼簿！');
               }, () => {
-                showNotification('複製失敗，請手動複製。');
+                showNotification('複製失败，請手動複製。');
               });
           };
 
@@ -386,15 +384,13 @@
               };
 
               try {
-                  // ==================
-                  // 🔧 修正 #2：移除 /public/
-                  // ==================
+                  // 修正 #2：路徑已修正
                   const publicDocRef = db.doc(`artifacts/${appId}/publicData/${activeClassId}`);
                   await publicDocRef.set(publicDataPayload);
                   showNotification(`成功更新「${activeClassName}」的公開頁面！`);
               } catch (error) {
-                  console.error("發布公開資料失敗:", error);
-                  showNotification(`發布失敗: ${error.message}`);
+                  console.error("發布公開資料失败:", error);
+                  showNotification(`發布失败: ${error.message}`);
               } finally {
                   setLoading(p => ({ ...p, publishing: false }));
               }
@@ -440,7 +436,7 @@
                       }
                   }
                   setModal({ type: null, data: null });
-              } catch (error) { console.error("儲存失敗:", error); showNotification(`儲存失敗: ${error.message}`); } 
+              } catch (error) { console.error("儲存失败:", error); showNotification(`儲存失败: ${error.message}`); } 
               finally { setIsSaving(false); }
           };
           
@@ -468,11 +464,18 @@
                       batch.delete(db.doc(`artifacts/${appId}/public/data/classes/${classIdToDelete}`));
                       
                       // ==================
-                      // 🔧 修正 #3：移除 /public/ (這就是造成錯誤的程式行)
+                      // 🔧【權限修正】
+                      // 不直接刪除公開文件(權限不足)，而是將其清空 (set 權限是足夠的)
                       // ==================
-                      batch.delete(db.doc(`artifacts/${appId}/publicData/${classIdToDelete}`)); 
+                      const publicDocRef = db.doc(`artifacts/${appId}/publicData/${classIdToDelete}`);
+                      batch.set(publicDocRef, { 
+                          className: `${modal.data.name} (已刪除)`, 
+                          students: [], 
+                          assignments: [], 
+                          lastUpdated: firebase.firestore.FieldValue.serverTimestamp() 
+                      });
 
-                      // 5. 執行所有刪除操作
+                      // 5. 執行所有操作
                       await batch.commit();
                       
                       // 刪除後自動切換到另一個班級 (如果有的話)
@@ -512,8 +515,8 @@
                   setModal({ type: null, data: null });
 
               } catch (error) { 
-                  console.error("刪除失敗:", error); 
-                  showNotification(`刪除失敗: ${error.message}`); 
+                  console.error("刪除失败:", error); 
+                  showNotification(`刪除失败: ${error.message}`); 
               } finally { 
                   setIsDeleting(false); 
               }
@@ -538,8 +541,8 @@
                   await batch.commit();
                   showNotification(`成功清除了 ${assignmentIdsToDelete.length} 個已完成的作業！`);
               } catch (error) {
-                  console.error("清除已完成作業失敗:", error);
-                  showNotification("清除失敗，請稍後再試。");
+                  console.error("清除已完成作業失败:", error);
+                  showNotification("清除失败，請稍後再試。");
               } finally {
                   setIsDeleting(false);
                   setIsClearCompletedModalOpen(false);
@@ -585,8 +588,8 @@
                   await batch.commit();
                   showNotification(`已成功更新作業順序！`);
               } catch (error) {
-                  console.error("更新作業順序失敗:", error);
-                  showNotification("更新作業順序失敗。");
+                  console.error("更新作業順序失败:", error);
+                  showNotification("更新作業順序失败。");
               }
           };
 
@@ -596,11 +599,11 @@
               try {
                   await auth.signInWithPopup(provider);
               } catch (error) {
-                  console.error("Google 登入失敗:", error);
+                  console.error("Google 登入失败:", error);
                   if (error.code === 'auth/operation-not-supported-in-this-environment') {
                       setLoginError("Google 登入無法在目前預覽環境中使用，請在部署後的正式網站上操作。");
                   } else {
-                      setLoginError(`登入失敗: ${error.message}`);
+                      setLoginError(`登入失败: ${error.message}`);
                   }
               }
           };
@@ -609,7 +612,7 @@
               try {
                   await auth.signOut();
               } catch (error) {
-                  console.error("登出失敗:", error);
+                  console.error("登出失败:", error);
               }
           };
           

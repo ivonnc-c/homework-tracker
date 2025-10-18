@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>作業繳交追蹤總表</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-firestore-compat.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+      const { useState, useEffect, useCallback, useMemo } = React;
+
+      const getVisitorLink = (classId) => {
+        if (!classId) return '';
+        return `${window.location.origin}${window.location.pathname}?classId=${classId}`;
+      };
+      
+      const firebaseConfig = {
+          apiKey: "AIzaSyACc1hEmcC7GR84_jvtYb2rG5bfErCenCc",
+          authDomain: "homeworktracker-32647.firebaseapp.com",
+          projectId: "homeworktracker-32647",
+          storageBucket: "homeworktracker-32647.appspot.com",
+          messagingSenderId: "614728738497",
+          appId: "1:614728738497:web:222fcb82c471e7095b5640"
+      };
+      const appId = 'super-tracker-default';
+
+      const STATUS_MAP = {
+          'default':     { color: 'bg-white border-2 border-gray-400', name: '尚未檢查' },
+          'submitted':   { color: 'bg-green-500', name: '準時繳交' },
+          'late':        { color: 'bg-yellow-500', name: '事後補交' },
+          'unsubmitted': { color: 'bg-red-500', name: '逾期未繳' },
+          'ignored':     { color: 'bg-gray-500', name: '忽略' },
+      };
+
+      const Modal = ({ isOpen, title, children, onClose, footer }) => {
+          if (!isOpen) return null;
+          return (
+              <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4" onClick={onClose}>
+                  <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md transform transition-all duration-300" onClick={(e) => e.stopPropagation()}>
+                      <h2 className="text-xl font-bold mb-4 text-indigo-700 border-b pb-2">{title}</h2>
+                      <div className="mb-6">{children}</div>
+                      {footer && <div className="flex justify-end space-x-3">{footer}</div>}
+                  </div>
+              </div>
+          );
+      };
+      
+      const Input = ({ label, id, value, onChange, type = "text", required = false, readOnly = false }) => (
+          <div>
+              {label && <label htmlFor={id} className="block text-sm font-medium text-gray-700 mb-1">{label}</label>}
+              <input id={id} type={type} value={value} onChange={onChange} required={required} readOnly={readOnly} className={`w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 ${readOnly ? 'bg-gray-100 cursor-not-allowed' : ''}`} />
+          </div>
+      );
+
+      const Textarea = ({ label, id, value, onChange, placeholder, rows = 8 }) => (
+          <div>
+              {label && <label htmlFor={id} className="block text-sm font-medium text-gray-700 mb-1">{label}</label>}
+              <textarea id={id} value={value} onChange={onChange} placeholder={placeholder} rows={rows} className="w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500" />
+          </div>
+      );
+
+      const Button = ({ children, onClick, disabled = false, className = "bg-indigo-600 hover:bg-indigo-700", type = "button" }) => (
+          <button onClick={onClick} disabled={disabled} type={type} className={`flex justify-center items-center px-6 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white ${className} disabled:opacity-50 disabled:cursor-not-allowed transition duration-150`}>
+              {children}
+          </button>
+      );
+
+      const StatusCell = ({ status, onClick, isVisitor = false }) => {
+          const currentStatus = STATUS_MAP[status] || STATUS_MAP.default;
+          const buttonClasses = `w-6 h-6 rounded-full shadow-md mx-auto block ${currentStatus.color}`;
+          if (isVisitor) {
+              return <td className="border p-1 text-center"><div className={buttonClasses} title={currentStatus.name} /></td>;
+          }
+          return <td className="border p-1 text-center"><button onClick={onClick} className={`${buttonClasses} transform transition duration-150 active:scale-95`} title={currentStatus.name}/></td>;
+      };
+      
+      const AssignmentHeader = ({ assignment, onEdit, onCopy, onDragStart, onDragOver, onDrop, isDragging, isComplete, isVisitor = false }) => {
+          const formatDate = (dateString) => {
+              if (!dateString) return '';
+              const d = new Date(dateString);
+              return `${d.getMonth()+1}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+          };
+          
+          const dragStyles = isDragging ? 'opacity-50 border-4 border-indigo-400' : 'opacity-100 border-2 border-transparent';
+          const completeStyle = isComplete ? 'bg-green-200' : 'bg-gray-100';
+          const cursorStyle = isVisitor ? 'cursor-default' : 'cursor-grab';
+          const widthStyle = 'w-24';
+
+          return (
+              <th 
+                  className={`border p-1 text-center text-sm font-semibold text-gray-700 bg-gray-100 ${widthStyle} ${cursorStyle} ${dragStyles} ${completeStyle}`}
+                  draggable={!isVisitor}
+                  onDragStart={onDragStart}
+                  onDragOver={onDragOver}
+                  onDrop={onDrop}
+                  data-assignment-id={assignment.id}
+              >
+                  <div className="group relative">
+                      <div className={isVisitor ? '' : 'cursor-pointer'} onClick={isVisitor ? null : onEdit}>
+                          <p className="font-bold">{assignment.title}</p>
+                          <p className="text-xs text-red-500">[{formatDate(assignment.dueDate)}]</p>
+                          {isComplete && <p className="text-xs text-green-700 font-bold">[已完成]</p>}
+                      </div>
+                      {!isVisitor && (
+                        <button onClick={onCopy} className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 transition-opacity bg-pink-500 text-white rounded-full p-1 shadow-lg hover:bg-pink-600" title={`複製「${assignment.title}」的未繳名單`}>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m-6 4H9m-1 0h.01M9 16h.01" /></svg>
+                        </button>
+                      )}
+                  </div>
+              </th>
+          );
+      };
+
+      const StudentCell = ({ student, onEdit, onCopyDefaulterList, isVisitor = false, getSeatNumber }) => (
+          <th className={`border p-1 text-sm text-center font-semibold text-gray-800 bg-gray-50 sticky left-0 z-10 ${isVisitor ? 'w-16' : 'w-32'}`}>
+              <div className="flex items-center justify-between group px-2">
+                  <span className={isVisitor ? '' : 'cursor-pointer hover:underline'} onClick={isVisitor ? null : onEdit}>
+                    {isVisitor ? getSeatNumber(student.name) : student.name}
+                  </span>
+                  {!isVisitor && (
+                    <button onClick={onCopyDefaulterList} className="opacity-0 group-hover:opacity-100 transition-opacity text-blue-500 hover:text-blue-700 p-1" title={`${student.name} 的缺交清單`}>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+                    </button>
+                  )}
+              </div>
+          </th>
+      );
+
+      const AssignmentTable = ({ students, assignments, onStatusChange, getDisplayStatus, onEditStudent, onEditAssignment, onCopyUnsubmitted, onCopyStudentDefaulterList, handleDragStart, handleDragOver, handleDrop, draggedAssignmentId, now, isVisitor = false, getSeatNumber }) => {
+          const headerWidthClass = isVisitor ? 'w-16' : 'w-32';
+          if (!students || students.length === 0 && (!assignments || assignments.length === 0)) return <div className="p-10 bg-white rounded-xl shadow-lg border-2 border-dashed border-gray-300 text-center text-gray-500 mt-4"><p className="text-xl font-medium mb-2">此班級尚無學生或作業項目</p></div>;
+          return (
+              <div className="overflow-x-auto bg-white rounded-xl shadow-lg mt-4">
+                  <table className="border-collapse table-fixed w-full">
+                      <thead>
+                          <tr>
+                              <th className={`border p-1 text-center font-semibold text-gray-700 bg-gray-100 sticky left-0 z-20 ${headerWidthClass}`}>學生座號</th>
+                              {assignments.map(assignment => {
+                                  const isPastDue = assignment.dueDate ? new Date(assignment.dueDate).getTime() < now : false;
+                                  const isComplete = isPastDue && !students.some(student => getDisplayStatus(student, assignment) === 'unsubmitted');
+                                  return (
+                                      <AssignmentHeader 
+                                          key={assignment.id} 
+                                          assignment={assignment} 
+                                          onEdit={() => onEditAssignment(assignment)} 
+                                          onCopy={() => onCopyUnsubmitted(assignment.id)}
+                                          onDragStart={(e) => handleDragStart(e, assignment.id)}
+                                          onDragOver={handleDragOver}
+                                          onDrop={(e) => handleDrop(e, assignment.id)}
+                                          isDragging={draggedAssignmentId === assignment.id}
+                                          isComplete={isComplete}
+                                          isVisitor={isVisitor}
+                                      />
+                                  );
+                              })}
+                          </tr>
+                      </thead>
+                      <tbody>
+                          {students.map((student, index) => (
+                              <tr key={student.id} className={index % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                                  <StudentCell student={student} onEdit={() => onEditStudent(student)} onCopyDefaulterList={() => onCopyStudentDefaulterList(student.id)} isVisitor={isVisitor} getSeatNumber={getSeatNumber} />
+                                  {assignments.map(assignment => <StatusCell key={assignment.id} status={getDisplayStatus(student, assignment)} onClick={() => onStatusChange(student, assignment)} isVisitor={isVisitor}/>)}
+                              </tr>
+                          ))}
+                      </tbody>
+                  </table>
+              </div>
+          );
+      };
+      
+      function App() {
+          const [db, setDb] = useState(null);
+          const [auth, setAuth] = useState(null);
+          const [user, setUser] = useState(null);
+          
+          const [visitorData, setVisitorData] = useState(null);
+          const [isVisitorMode, setIsVisitorMode] = useState(false);
+          const [visitorError, setVisitorError] = useState(null);
+
+          const [loginError, setLoginError] = useState('');
+          const [classes, setClasses] = useState([]);
+          const [activeClassId, setActiveClassId] = useState(null);
+          const [students, setStudents] = useState([]);
+          const [assignments, setAssignments] = useState([]);
+          const [loading, setLoading] = useState({ auth: true, classes: false, data: false, publishing: false });
+          const [now, setNow] = useState(new Date().getTime());
+          const [modal, setModal] = useState({ type: null, data: null });
+          const [statusChangeModal, setStatusChangeModal] = useState({ isOpen: false, student: null, assignment: null });
+          const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
+          const [isClearCompletedModalOpen, setIsClearCompletedModalOpen] = useState(false);
+          const [isSaving, setIsSaving] = useState(false);
+          const [isDeleting, setIsDeleting] = useState(false);
+          const [formState, setFormState] = useState({});
+          const [notification, setNotification] = useState('');
+          const [draggedAssignmentId, setDraggedAssignmentId] = useState(null);
+          
+          useEffect(() => {
+              const timer = setInterval(() => setNow(new Date().getTime()), 60000);
+              return () => clearInterval(timer);
+          }, []);
+
+          useEffect(() => {
+              const params = new URLSearchParams(window.location.search);
+              const classIdFromUrl = params.get('classId');
+              
+              if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+              const authInstance = firebase.auth();
+              const firestoreInstance = firebase.firestore();
+              setAuth(authInstance);
+              setDb(firestoreInstance);
+              firebase.firestore.setLogLevel('error');
+              
+              if (classIdFromUrl) {
+                  setIsVisitorMode(true);
+                  setLoading(p => ({...p, auth: false, data: true}));
+                  const publicDocRef = firestoreInstance.doc(`artifacts/${appId}/public/publicData/${classIdFromUrl}`);
+                  publicDocRef.get().then(doc => {
+                      if (doc.exists) {
+                          setVisitorData(doc.data());
+                      } else {
+                          setVisitorError('此班級的公開頁面不存在或尚未發布。');
+                      }
+                  }).catch(err => {
+                      console.error("讀取公開資料失敗:", err);
+                      setVisitorError('讀取資料時發生錯誤，請稍後再試。');
+                  }).finally(() => {
+                      setLoading(p => ({...p, data: false}));
+                  });
+              } else {
+                const unsub = authInstance.onAuthStateChanged((user) => {
+                    setUser(user);
+                    setLoading(prev => ({ ...prev, auth: false }));
+                });
+                return () => unsub();
+              }
+          }, []);
+
+          useEffect(() => {
+              if (isVisitorMode || !user || !db) {
+                  setClasses([]);
+                  setActiveClassId(null);
+                  return;
+              }
+              setLoading(p => ({ ...p, classes: true }));
+              const q = db.collection(`artifacts/${appId}/public/data/classes`).where("userId", "==", user.uid);
+              const unsub = q.onSnapshot((snapshot) => {
+                  const fetched = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => (a.createdAt?.toMillis() || 0) - (b.createdAt?.toMillis() || 0));
+                  setClasses(fetched);
+                  if (!activeClassId || !fetched.some(c => c.id === activeClassId)) {
+                      setActiveClassId(fetched[0]?.id || null);
+                  }
+                  setLoading(p => ({ ...p, classes: false }));
+              }, err => {
+                  console.error("班級監聽失敗:", err);
+                  setLoading(p => ({ ...p, classes: false }));
+              });
+              return () => unsub();
+          }, [user, db, isVisitorMode]);
+
+          useEffect(() => {
+              if (isVisitorMode || !user || !activeClassId || !db) { 
+                  setStudents([]); 
+                  setAssignments([]); 
+                  return; 
+              }
+              setLoading(p => ({ ...p, data: true }));
+              const sQuery = db.collection(`artifacts/${appId}/public/data/students`).where("classId", "==", activeClassId).where("userId", "==", user.uid);
+              const aQuery = db.collection(`artifacts/${appId}/public/data/assignments`).where("classId", "==", activeClassId).where("userId", "==", user.uid);
+
+              const unsubS = sQuery.onSnapshot(snap => {
+                  const fetchedStudents = snap.docs.map(d => ({id: d.id, ...d.data()}));
+                  fetchedStudents.sort((a, b) => {
+                      const numA = parseInt(a.name.match(/^\d+/)?.[0] || '9999', 10);
+                      const numB = parseInt(b.name.match(/^\d+/)?.[0] || '9999', 10);
+                      if (numA !== numB) return numA - numB;
+                      return a.name.localeCompare(b.name, 'zh-Hant');
+                  });
+                  setStudents(fetchedStudents);
+              }, err => {
+                  console.error("學生資料監聽失敗:", err);
+                  showNotification('讀取學生資料失敗。');
+                  setLoading(p => ({ ...p, data: false }));
+              });
+
+              const unsubA = aQuery.onSnapshot(snap => {
+                  const fetchedAssignments = snap.docs.map(d => ({id: d.id, ...d.data()}));
+                  setAssignments(fetchedAssignments);
+                  setLoading(p => ({ ...p, data: false }));
+              }, err => {
+                  console.error("作業資料監聽失敗:", err);
+                  showNotification('讀取作業資料失敗。');
+                  setLoading(p => ({ ...p, data: false }));
+              });
+              
+              return () => { unsubS(); unsubA(); };
+          }, [user, activeClassId, db, isVisitorMode]);
+          
+          const getDisplayStatus = useCallback((student, assignment) => {
+              const statusObj = student.statuses?.[assignment.id] || { state: 'default' };
+              if (statusObj.state !== 'default') return statusObj.state;
+
+              let dueDateTime = Infinity;
+              if (assignment.dueDate) {
+                if (assignment.dueDate.seconds) {
+                  dueDateTime = new Date(assignment.dueDate.seconds * 1000).getTime();
+                } else {
+                  dueDateTime = new Date(assignment.dueDate).getTime();
+                }
+              }
+              
+              return dueDateTime < now ? 'unsubmitted' : 'default';
+          }, [now]);
+
+          const sortedAssignments = useMemo(() => {
+              if (!assignments.length) return [];
+              return [...assignments].sort((a, b) => {
+                  const isPastDueA = a.dueDate ? new Date(a.dueDate?.seconds ? a.dueDate.seconds * 1000 : a.dueDate).getTime() < now : false;
+                  const isCompleteA = isPastDueA && !students.some(student => getDisplayStatus(student, a) === 'unsubmitted');
+                  const isPastDueB = b.dueDate ? new Date(b.dueDate?.seconds ? b.dueDate.seconds * 1000 : b.dueDate).getTime() < now : false;
+                  const isCompleteB = isPastDueB && !students.some(student => getDisplayStatus(student, b) === 'unsubmitted');
+                  if (isCompleteA && !isCompleteB) return 1;
+                  if (!isCompleteA && isCompleteB) return -1;
+                  return (a.order || 0) - (b.order || 0);
+              });
+          }, [assignments, students, now, getDisplayStatus]);
+          
+          const completedAssignments = useMemo(() => {
+              return sortedAssignments.filter(assignment => {
+                  const isPastDue = assignment.dueDate ? new Date(assignment.dueDate?.seconds ? assignment.dueDate.seconds * 1000 : assignment.dueDate).getTime() < now : false;
+                  if (!isPastDue) return false;
+                  return !students.some(student => getDisplayStatus(student, assignment) === 'unsubmitted');
+              });
+          }, [sortedAssignments, students, now, getDisplayStatus]);
+
+          const showNotification = (message) => {
+              setNotification(message);
+              setTimeout(() => setNotification(''), 3000);
+          };
+
+          const copyToClipboard = (text) => {
+              navigator.clipboard.writeText(text).then(() => {
+                showNotification('成功複製到剪貼簿！');
+              }, () => {
+                showNotification('複製失敗，請手動複製。');
+              });
+          };
+
+          const getSeatNumber = (name) => {
+              const num = name.match(/^\d+/)?.[0];
+              return num ? String(num).padStart(2, '0') : name;
+          };
+
+          const handlePublishPublicData = async () => {
+              if (!db || !activeClassId || !students || students.length === 0) {
+                  showNotification('沒有資料可發布！');
+                  return;
+              }
+              setLoading(p => ({ ...p, publishing: true }));
+              
+              const activeClassName = classes.find(c => c.id === activeClassId)?.name || '';
+
+              const publicDataPayload = {
+                  className: activeClassName,
+                  students: students,
+                  assignments: assignments,
+                  lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+              };
+
+              try {
+                  const publicDocRef = db.doc(`artifacts/${appId}/public/publicData/${activeClassId}`);
+                  await publicDocRef.set(publicDataPayload);
+                  showNotification(`成功更新「${activeClassName}」的公開頁面！`);
+              } catch (error) {
+                  console.error("發布公開資料失敗:", error);
+                  showNotification(`發布失敗: ${error.message}`);
+              } finally {
+                  setLoading(p => ({ ...p, publishing: false }));
+              }
+          };
+
+          const handleSave = async () => {
+              if (!db || !user || !modal.type) return;
+              setIsSaving(true);
+              try {
+                  if (modal.type === 'student' && !modal.data) {
+                      const existingNames = new Set(students.map(s => s.name));
+                      const names = formState.studentList.split('\n').map(name => name.trim()).filter(Boolean);
+                      const uniqueNewNames = [...new Set(names)].filter(name => !existingNames.has(name));
+                      if (uniqueNewNames.length > 0) {
+                          const batch = db.batch();
+                          const ref = db.collection(`artifacts/${appId}/public/data/students`);
+                          uniqueNewNames.forEach((name) => {
+                              const newDocRef = ref.doc();
+                              batch.set(newDocRef, { name, classId: activeClassId, userId: user.uid, createdAt: firebase.firestore.FieldValue.serverTimestamp(), statuses: {} });
+                          });
+                          await batch.commit();
+                      }
+                  } else {
+                      const collectionNameMap = { class: 'classes', student: 'students', assignment: 'assignments' };
+                      const collectionName = collectionNameMap[modal.type];
+                      if (!collectionName) {
+                        setIsSaving(false);
+                        return;
+                      };
+                      const basePath = `artifacts/${appId}/public/data/${collectionName}`;
+                      if (modal.data) {
+                          await db.doc(`${basePath}/${modal.data.id}`).update(formState);
+                      } else {
+                          let data = { ...formState, userId: user.uid, classId: activeClassId, createdAt: firebase.firestore.FieldValue.serverTimestamp() };
+                          if (modal.type === 'class') {
+                              delete data.classId; 
+                          } else {
+                              const existingOrders = assignments.map(a => a.order || 0);
+                              const minOrder = assignments.length > 0 ? Math.min(...existingOrders) : 0;
+                              data.order = minOrder - 1;
+                          }
+                          await db.collection(basePath).add(data);
+                      }
+                  }
+                  setModal({ type: null, data: null });
+              } catch (error) { console.error("儲存失敗:", error); showNotification(`儲存失敗: ${error.message}`); } 
+              finally { setIsSaving(false); }
+          };
+          
+          const handleDelete = async () => {
+              if (!db || !user || !modal.type || !modal.data) return;
+              setIsDeleting(true);
+              try {
+                  if (modal.type === 'class') {
+                      const batch = db.batch();
+                      const sQuery = db.collection(`artifacts/${appId}/public/data/students`).where("classId", "==", modal.data.id).where("userId", "==", user.uid);
+                      const aQuery = db.collection(`artifacts/${appId}/public/data/assignments`).where("classId", "==", modal.data.id).where("userId", "==", user.uid);
+                      const [sSnap, aSnap] = await Promise.all([sQuery.get(), aQuery.get()]);
+                      sSnap.forEach(d => batch.delete(d.ref)); aSnap.forEach(d => batch.delete(d.ref));
+                      batch.delete(db.doc(`artifacts/${appId}/public/data/classes/${modal.data.id}`));
+                      
+                      batch.delete(db.doc(`artifacts/${appId}/public/publicData/${modal.data.id}`));
+
+                      await batch.commit();
+                      setActiveClassId(null);
+                  } else if (modal.type === 'student') {
+                    await db.doc(`artifacts/${appId}/public/data/students/${modal.data.id}`).delete();
+                  } else if (modal.type === 'assignment') { 
+                      const batch = db.batch();
+                      const id = modal.data.id;
+                      students.forEach(s => {
+                          if (s.statuses?.[id]) {
+                              const studentRef = db.doc(`artifacts/${appId}/public/data/students/${s.id}`);
+                              batch.update(studentRef, { [`statuses.${id}`]: firebase.firestore.FieldValue.delete() });
+                          }
+                      });
+                      batch.delete(db.doc(`artifacts/${appId}/public/data/assignments/${id}`));
+                      await batch.commit();
+                  }
+                  setModal({ type: null, data: null });
+              } catch (error) { console.error("刪除失敗:", error); showNotification(`刪除失敗: ${error.message}`); } 
+              finally { setIsDeleting(false); }
+          };
+
+          const handleClearCompletedAssignments = async () => {
+              if (!db || completedAssignments.length === 0) return;
+              setIsDeleting(true);
+              try {
+                  const batch = db.batch();
+                  const assignmentIdsToDelete = completedAssignments.map(a => a.id);
+                  assignmentIdsToDelete.forEach(id => {
+                      const assignmentRef = db.doc(`artifacts/${appId}/public/data/assignments/${id}`);
+                      batch.delete(assignmentRef);
+                      students.forEach(student => {
+                          if (student.statuses && student.statuses[id]) {
+                              const studentRef = db.doc(`artifacts/${appId}/public/data/students/${student.id}`);
+                              batch.update(studentRef, { [`statuses.${id}`]: firebase.firestore.FieldValue.delete() });
+                          }
+                      });
+                  });
+                  await batch.commit();
+                  showNotification(`成功清除了 ${assignmentIdsToDelete.length} 個已完成的作業！`);
+              } catch (error) {
+                  console.error("清除已完成作業失敗:", error);
+                  showNotification("清除失敗，請稍後再試。");
+              } finally {
+                  setIsDeleting(false);
+                  setIsClearCompletedModalOpen(false);
+              }
+          };
+          
+          const renderModalTitle = () => {
+              const titleMap = { class: '班級', student: '學生', assignment: '作業' };
+              if (!modal.type) return '';
+              if (modal.type === 'student' && !modal.data) return '批次新增學生';
+              return `${modal.data ? '編輯' : '新增'}${titleMap[modal.type]}`;
+          };
+
+          const handleDragStart = (e, id) => {
+              setDraggedAssignmentId(id);
+              e.dataTransfer.effectAllowed = "move";
+              e.dataTransfer.setData("text/plain", id);
+          };
+
+          const handleDragOver = (e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+          };
+
+          const handleDrop = async (e, targetId) => {
+              e.preventDefault();
+              if (!db) return;
+              const sourceId = draggedAssignmentId;
+              setDraggedAssignmentId(null);
+              if (!sourceId || sourceId === targetId) return;
+              const reorderedAssignments = [...sortedAssignments];
+              const sourceIndex = reorderedAssignments.findIndex(a => a.id === sourceId);
+              const targetIndex = reorderedAssignments.findIndex(a => a.id === targetId);
+              if (sourceIndex === -1 || targetIndex === -1) return;
+              const [movedAssignment] = reorderedAssignments.splice(sourceIndex, 1);
+              reorderedAssignments.splice(targetIndex, 0, movedAssignment);
+              const batch = db.batch();
+              const ref = db.collection(`artifacts/${appId}/public/data/assignments`);
+              reorderedAssignments.forEach((assignment, index) => {
+                  batch.update(ref.doc(assignment.id), { order: index });
+              });
+              try {
+                  await batch.commit();
+                  showNotification(`已成功更新作業順序！`);
+              } catch (error) {
+                  console.error("更新作業順序失敗:", error);
+                  showNotification("更新作業順序失敗。");
+              }
+          };
+
+          const handleSignIn = async () => {
+              setLoginError('');
+              const provider = new firebase.auth.GoogleAuthProvider();
+              try {
+                  await auth.signInWithPopup(provider);
+              } catch (error) {
+                  console.error("Google 登入失敗:", error);
+                  if (error.code === 'auth/operation-not-supported-in-this-environment') {
+                      setLoginError("Google 登入無法在目前預覽環境中使用，請在部署後的正式網站上操作。");
+                  } else {
+                      setLoginError(`登入失敗: ${error.message}`);
+                  }
+              }
+          };
+
+          const handleSignOut = async () => {
+              try {
+                  await auth.signOut();
+              } catch (error) {
+                  console.error("登出失敗:", error);
+              }
+          };
+          
+          const executeUpdateStatus = useCallback(async (student, assignment, newState) => {
+              if (!db || isVisitorMode) return;
+              const studentDocRef = db.doc(`artifacts/${appId}/public/data/students/${student.id}`);
+              const storedState = student.statuses?.[assignment.id]?.state || 'default';
+              let finalState = newState;
+              if (!finalState) {
+                 switch (storedState) {
+                      case 'default': finalState = 'submitted'; break;
+                      case 'submitted': finalState = 'ignored'; break;
+                      case 'ignored': finalState = 'default'; break;
+                      default: finalState = 'default';
+                  }
+              }
+              let submittedDate = null;
+              if (finalState === 'submitted' || finalState === 'late') {
+                  submittedDate = new Date().toISOString().substring(0, 10);
+              }
+              const newStatusObj = { state: finalState, submittedDate };
+              await studentDocRef.update({ [`statuses.${assignment.id}`]: newStatusObj });
+          }, [db, isVisitorMode]);
+          
+          const handleStatusChange = useCallback((student, assignment) => {
+              if (isVisitorMode) return;
+              const isPastDue = assignment.dueDate ? new Date(assignment.dueDate?.seconds ? assignment.dueDate.seconds * 1000 : assignment.dueDate).getTime() < now : false;
+              if (isPastDue) {
+                  setStatusChangeModal({ isOpen: true, student, assignment });
+              } else {
+                  executeUpdateStatus(student, assignment);
+              }
+          }, [now, executeUpdateStatus, isVisitorMode]);
+          
+          const handlePreciseStatusUpdate = async (newState) => {
+              const { student, assignment } = statusChangeModal;
+              if (!student || !assignment) return;
+              const finalState = newState === 'unsubmitted' ? 'default' : newState;
+              await executeUpdateStatus(student, assignment, finalState);
+              setStatusChangeModal({ isOpen: false, student: null, assignment: null });
+          };
+
+          const handleCopyUnsubmitted = (assignmentId) => {
+              const className = isVisitorMode ? (visitorData?.className || '') : activeClassName;
+              const dataSet = isVisitorMode ? (visitorData?.assignments || []) : assignments;
+              const studentSet = isVisitorMode ? (visitorData?.students || []) : students;
+
+              const assignment = dataSet.find(a => a.id === assignmentId);
+              if (!assignment) return;
+              const unsubmittedStudents = studentSet.filter(s => getDisplayStatus(s, assignment) === 'unsubmitted').map(s => getSeatNumber(s.name));
+              const d = new Date(assignment.dueDate?.seconds ? assignment.dueDate.seconds * 1000 : assignment.dueDate);
+              const dateStr = `${d.getMonth() + 1}/${d.getDate()}`;
+              let text = `【${className}未繳作業名單】\n\n`;
+              text += `-${assignment.title}(${dateStr}截止) :\n  ${unsubmittedStudents.length > 0 ? unsubmittedStudents.join(', ') : '無'}`;
+              copyToClipboard(text);
+          };
+
+          const handleCopyAllUnsubmitted = () => {
+              const className = isVisitorMode ? (visitorData?.className || '') : activeClassName;
+              const dataSet = isVisitorMode ? (visitorData?.assignments || []) : sortedAssignments;
+              const studentSet = isVisitorMode ? (visitorData?.students || []) : students;
+
+              let fullReport = `【${className}未繳作業名單】\n\n`;
+              let hasUnsubmitted = false;
+              const unsubmittedAssignments = dataSet.filter(assignment => studentSet.some(s => getDisplayStatus(s, assignment) === 'unsubmitted'));
+              unsubmittedAssignments.forEach((assignment, index) => {
+                  hasUnsubmitted = true;
+                  const unsubmittedStudents = studentSet.filter(s => getDisplayStatus(s, assignment) === 'unsubmitted').map(s => getSeatNumber(s.name));
+                  const d = new Date(assignment.dueDate?.seconds ? assignment.dueDate.seconds * 1000 : assignment.dueDate);
+                  const dateStr = `${d.getMonth() + 1}/${d.getDate()}`;
+                  fullReport += `-${assignment.title}(${dateStr}截止) :\n  ${unsubmittedStudents.join(', ')}`;
+                  if (index < unsubmittedAssignments.length - 1) {
+                      fullReport += '\n\n';
+                  }
+              });
+              if (!hasUnsubmitted) {
+                  fullReport = `【${className}】太棒了！所有項目都已繳齊！`;
+              }
+              copyToClipboard(fullReport.trim());
+          };
+
+          const handleCopyStudentDefaulterList = (studentId) => {
+              const studentSet = isVisitorMode ? (visitorData?.students || []) : students;
+              const dataSet = isVisitorMode ? (visitorData?.assignments || []) : sortedAssignments;
+              const student = studentSet.find(s => s.id === studentId);
+              if (!student) return;
+              const defaulterList = dataSet.filter(assignment => getDisplayStatus(student, assignment) === 'unsubmitted').map(assignment => {
+                  const d = new Date(assignment.dueDate?.seconds ? assignment.dueDate.seconds * 1000 : assignment.dueDate);
+                  const dateStr = `${d.getMonth() + 1}/${d.getDate()}`;
+                  return `${dateStr}-${assignment.title}`;
+              }).join('、');
+              const text = `【${student.name}】缺交清單：\n${defaulterList || '無'}`;
+              copyToClipboard(text);
+          };
+
+          useEffect(() => {
+              if (modal.type) {
+                  if (modal.data) {
+                    let formData = {...modal.data};
+                    if(modal.type === 'assignment' && formData.dueDate && formData.dueDate.seconds) {
+                        const d = new Date(formData.dueDate.seconds * 1000);
+                        d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+                        formData.dueDate = d.toISOString().slice(0, 16);
+                    }
+                    setFormState(formData);
+                  } else {
+                      const now = new Date();
+                      now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+                      const defaultState = {
+                          class: { name: '', isPublic: false },
+                          student: { name: '', studentList: '' },
+                          assignment: { title: '', dueDate: now.toISOString().slice(0,16) }
+                      };
+                      setFormState(defaultState[modal.type]);
+                  }
+              } else {
+                  setFormState({});
+              }
+          }, [modal]);
+
+          const handleFormChange = (e) => {
+            const { id, value, type, checked } = e.target;
+            setFormState(prev => ({
+              ...prev,
+              [id]: type === 'checkbox' ? checked : value
+            }));
+          };
+          
+          if (loading.auth) {
+              return <div className="flex items-center justify-center min-h-screen bg-gray-100"><p className="text-lg text-gray-600">正在載入...</p></div>;
+          }
+          
+          if (isVisitorMode) {
+              if (loading.data) {
+                  return <div className="flex items-center justify-center min-h-screen bg-gray-100"><p className="text-lg text-gray-600">正在載入公開頁面...</p></div>;
+              }
+              if (visitorError) {
+                  return (
+                      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100">
+                          <div className="text-center p-8 bg-white rounded-2xl shadow-xl max-w-md w-full">
+                              <h1 className="text-2xl font-bold text-red-600 mb-2">無法讀取作業總表</h1>
+                              <p className="text-gray-600">{visitorError}</p>
+                          </div>
+                      </div>
+                  );
+              }
+              if (visitorData) {
+                  const { className, students, assignments, lastUpdated } = visitorData;
+                  const formattedDate = lastUpdated ? new Date(lastUpdated.seconds * 1000).toLocaleString('zh-TW', { hour12: false }) : 'N/A';
+                  
+                  const visitorSortedAssignments = [...(assignments || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
+
+                  return (
+                      <div className="min-h-screen bg-gray-100 font-sans p-4 sm:p-6">
+                          <header className="bg-white rounded-xl shadow-lg p-6 mb-6">
+                              <h1 className="text-3xl font-extrabold text-indigo-700">作業繳交追蹤總表</h1>
+                              <p className="text-gray-600 mt-2">您正在以訪客模式檢視 <span className="font-bold text-indigo-700">{className}</span> 的作業狀況 (唯讀)</p>
+                              <p className="text-gray-600 mt-1">最後更新於：{formattedDate}</p>
+                               <div className="mt-4 border-t pt-3">
+                                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-gray-600">
+                                      <span className="font-bold">圖例:</span>
+                                      <div className="flex items-center gap-1"><div className="w-4 h-4 rounded-full bg-green-500"></div><span>準時</span></div>
+                                      <div className="flex items-center gap-1"><div className="w-4 h-4 rounded-full bg-yellow-500"></div><span>補交</span></div>
+                                      <div className="flex items-center gap-1"><div className="w-4 h-4 rounded-full bg-red-500"></div><span>逾期</span></div>
+                                      <div className="flex items-center gap-1"><div className="w-4 h-4 rounded-full bg-white border-2 border-gray-400"></div><span>未檢</span></div>
+                                      <div className="flex items-center gap-1"><div className="w-4 h-4 rounded-full bg-gray-500"></div><span>忽略</span></div>
+                                  </div>
+                              </div>
+                          </header>
+                          <main>
+                              <div className="flex justify-end mb-2">
+                                <Button onClick={() => handleCopyAllUnsubmitted()} className="bg-pink-500 hover:bg-pink-600">複製全班未繳總表</Button>
+                              </div>
+                              <AssignmentTable 
+                                  students={students || []} 
+                                  assignments={visitorSortedAssignments} 
+                                  getDisplayStatus={getDisplayStatus}
+                                  now={new Date().getTime()}
+                                  isVisitor={true}
+                                  getSeatNumber={getSeatNumber}
+                              />
+                          </main>
+                      </div>
+                  )
+              }
+              return null;
+          }
+
+          if (!user) {
+              return (
+                  <div className="flex flex-col items-center justify-center min-h-screen bg-indigo-50">
+                      <div className="text-center p-8 bg-white rounded-2xl shadow-xl max-w-md w-full">
+                          <h1 className="text-3xl font-extrabold text-indigo-700 mb-2">作業繳交追蹤總表</h1>
+                          <p className="text-gray-600 mb-6">一個為老師設計的雲端同步工具</p>
+                          <button onClick={handleSignIn} className="w-full flex items-center justify-center gap-3 px-6 py-3 border border-transparent text-base font-medium rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 transition duration-150">
+                              <svg className="w-6 h-6" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"></path><path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"></path><path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.222,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"></path><path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.574l6.19,5.238C39.99,36.59,44,30.865,44,24C44,22.659,43.862,21.35,43.611,20.083z"></path></svg>
+                              使用 Google 帳號登入
+                          </button>
+                          {loginError && <p className="mt-4 text-sm text-red-600 bg-red-100 p-3 rounded-lg">{loginError}</p>}
+                      </div>
+                  </div>
+              );
+          }
+          
+          const activeClass = classes.find(c => c.id === activeClassId);
+          const activeClassName = activeClass?.name || "班級";
+
+          return (
+              <div className="min-h-screen bg-gray-100 font-sans p-4 sm:p-6">
+                  {notification && (<div className="fixed top-5 right-5 bg-green-500 text-white py-2 px-4 rounded-lg shadow-lg z-50 animate-bounce">{notification}</div>)}
+                  
+                  <Modal isOpen={isHelpModalOpen} title="操作說明" onClose={() => setIsHelpModalOpen(false)} footer={<Button onClick={() => setIsHelpModalOpen(false)}>關閉</Button>}>
+                      <div className="space-y-3 text-gray-700">
+                          <div>
+                              <h3 className="font-bold mb-1 text-indigo-600">單元格點擊順序</h3>
+                              <p className='font-mono'>未檢查 ⚪️ → 準時繳交 🟢 → 忽略此項 🔘 → 未檢查 ⚪️</p>
+                              <p className="text-sm mt-1 border-t pt-2">PS. 作業截止後，未繳交的 ⚪️ 會自動變成逾期未繳 🔴。此時點選任一 <b>已確認</b> 或 <b>逾期</b> 的狀態會彈出<b>詳細選單</b> (可選: 準時交 / 補交 / 逾期未繳 / 忽略此項)。</p>
+                          </div>
+                          <div className="border-t pt-3">
+                              <h3 className="font-bold mb-1 text-indigo-600">複製與排序技巧</h3>
+                              <ul className="space-y-1 text-sm list-decimal list-inside">
+                                  <li><b>[單科未繳名單]：</b>滑鼠移到科目名稱，點選右上角的小圖示複製未繳名單（只顯示座號）。</li>
+                                  <li><b>[全班未繳總表]：</b>點選右上角藍色按鈕，複製所有逾期未繳項目的彙總名單。</li>
+                                  <li><b>[個人作業未繳清單]：</b>滑鼠移到該生的座號姓名，點選小圖示複製該生缺交清單（適合聯繫家長）。</li>
+                                  <li><b>[作業排序]：</b>直接拖曳表格上方的作業標題即可調整欄位順序。</li>
+                              </ul>
+                          </div>
+                      </div>
+                  </Modal>
+                  
+                  <Modal isOpen={statusChangeModal.isOpen} title="更改繳交狀態" onClose={() => setStatusChangeModal({ isOpen: false, student: null, assignment: null })}>
+                       <div className="text-center mb-4">
+                         <p>學生：<span className="font-bold">{statusChangeModal.student?.name}</span></p>
+                         <p>項目：<span className="font-bold">{statusChangeModal.assignment?.title}</span></p>
+                       </div>
+                       <div className="grid grid-cols-2 gap-3">
+                         <Button onClick={() => handlePreciseStatusUpdate('submitted')} className="bg-green-500 hover:bg-green-600">🟢 準時繳交</Button>
+                         <Button onClick={() => handlePreciseStatusUpdate('late')} className="bg-yellow-500 hover:bg-yellow-600">🟡 事後補交</Button>
+                         <Button onClick={() => handlePreciseStatusUpdate('unsubmitted')} className="bg-red-500 hover:bg-red-600">🔴 逾期未繳</Button>
+                         <Button onClick={() => handlePreciseStatusUpdate('ignored')} className="bg-gray-400 hover:bg-gray-500">⚪️ 忽略此項</Button>
+                       </div>
+                  </Modal>
+
+                  <Modal isOpen={!!modal.type} title={renderModalTitle()} onClose={() => setModal({ type: null, data: null })}
+                      footer={<>
+                          {modal.data && <Button onClick={handleDelete} disabled={isDeleting} className="bg-red-600 hover:bg-red-700 mr-auto">{isDeleting ? '刪除中...' : '刪除'}</Button>}
+                          <Button onClick={() => setModal({ type: null, data: null })} className="bg-gray-500 hover:bg-gray-600">取消</Button>
+                          <Button onClick={handleSave} disabled={isSaving}>{isSaving ? '儲存中...' : '儲存'}</Button>
+                      </>}>
+                      { modal.type === 'assignment' && <div className="space-y-4"><Input label="作業/項目名稱" id="title" value={formState.title || ''} onChange={handleFormChange} /><Input label="截止日期與時間" id="dueDate" type="datetime-local" value={formState.dueDate || ''} onChange={handleFormChange} /></div> }
+                      
+                      { modal.type === 'class' && (
+                        <div className="space-y-6">
+                            <Input label="班級名稱" id="name" value={formState.name || ''} onChange={handleFormChange} />
+                            <div className="relative">
+                                <div className="absolute inset-0 flex items-center"><span className="w-full border-t"></span></div>
+                                <div className="relative flex justify-center text-sm"><span className="px-2 bg-white text-gray-500">公開連結設定</span></div>
+                            </div>
+                            <div className="flex items-start space-x-3">
+                                <input id="isPublic" type="checkbox" className="h-5 w-5 mt-0.5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500" checked={formState.isPublic || false} onChange={handleFormChange} />
+                                <div className="flex-1">
+                                    <label htmlFor="isPublic" className="block text-sm font-medium text-gray-800">啟用此班級的公開訪客連結</label>
+                                    <p className="text-xs text-gray-500 mt-1">啟用後，還需點擊「更新公開頁面」按鈕，訪客才能看到最新資料。</p>
+                                </div>
+                            </div>
+                            {formState.isPublic && modal.data?.id && (
+                                <div className="space-y-2">
+                                    <Input label="訪客專用連結 (唯讀)" id="visitorLink" value={getVisitorLink(modal.data.id)} readOnly={true} onChange={()=>{}} />
+                                    <Button onClick={() => copyToClipboard(getVisitorLink(modal.data.id))} className="w-full bg-green-600 hover:bg-green-700">複製連結</Button>
+                                </div>
+                            )}
+                        </div>
+                      )}
+                      { modal.type === 'student' && (modal.data ? <Input label="學生座號/姓名" id="name" value={formState.name || ''} onChange={handleFormChange} /> : <Textarea label="學生名單 (一行一個)" id="studentList" value={formState.studentList || ''} onChange={handleFormChange} placeholder="從 Excel 或文件複製名單貼到這裡，例如：&#10;1號 王小明&#10;2號 陳大華&#10;3號 李美麗" />) }
+                  </Modal>
+                  
+                  <Modal isOpen={isClearCompletedModalOpen} title="⚠️ 確認清除已完成作業" onClose={() => setIsClearCompletedModalOpen(false)} footer={<>
+                          <Button onClick={() => setIsClearCompletedModalOpen(false)} className="bg-gray-500 hover:bg-gray-600">取消</Button>
+                          <Button onClick={handleClearCompletedAssignments} disabled={isDeleting} className="bg-red-600 hover:bg-red-700">{isDeleting ? '刪除中...' : '確認刪除'}</Button>
+                      </>}>
+                      <div className="text-sm text-gray-700">
+                          <p className="font-bold mb-2">您確定要永久刪除以下 {completedAssignments.length} 個已完成的作業項目嗎？</p>
+                          <ul className="list-disc list-inside bg-gray-50 p-2 rounded max-h-32 overflow-y-auto">
+                              {completedAssignments.map(a => <li key={a.id}>{a.title}</li>)}
+                          </ul>
+                          <p className="mt-4 text-red-600 font-semibold">此操作將會移除這些作業的所有相關紀錄，且無法復原。</p>
+                      </div>
+                  </Modal>
+
+                  <header className="bg-white rounded-xl shadow-lg p-6 mb-6">
+                      <div className="flex flex-wrap justify-between items-center gap-4">
+                          <div className="flex items-center gap-4">
+                              <h1 className="text-3xl font-extrabold text-indigo-700">作業繳交追蹤總表</h1>
+                              <button onClick={() => setIsHelpModalOpen(true)} className="text-sm text-indigo-600 hover:underline pt-2">操作說明</button>
+                          </div>
+                          <div className="flex items-center gap-3">
+                              <span className="text-sm text-gray-600">歡迎, {user.displayName || user.email}</span>
+                              <button onClick={handleSignOut} className="text-sm text-red-500 hover:underline">登出</button>
+                          </div>
+                      </div>
+                      <div className="text-sm text-gray-600 mt-2 space-y-1">
+                          <p>1. 追蹤<b>多班級</b>及<b>多科目</b>作業繳交狀況，資料儲存於雲端。</p>
+                          <p>2. 可產出<b>單科未繳名單</b>、<b>全班未繳總表</b>、<b>個人作業未繳清單</b>。</p>
+                      </div>
+                      <div className="mt-4 border-t pt-4">
+                          <div className="flex flex-wrap items-center gap-2">
+                              {classes.map(c => (<button key={c.id} onClick={() => setActiveClassId(c.id)} className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${activeClassId === c.id ? 'bg-indigo-600 text-white shadow' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}>{c.name}</button>))}
+                              <button onClick={() => setModal({ type: 'class', data: null })} className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 shadow text-sm font-semibold">新增班級</button>
+                               {activeClassId && <button onClick={() => setModal({ type: 'class', data: classes.find(c=> c.id === activeClassId) })} className="px-3 py-2 bg-gray-400 text-white rounded-lg hover:bg-gray-500 text-xs">編輯班級</button>}
+                               
+                               {activeClass?.isPublic && (
+                                  <Button 
+                                    onClick={handlePublishPublicData} 
+                                    disabled={loading.publishing}
+                                    className="bg-teal-500 hover:bg-teal-600"
+                                    title="將目前最新的作業狀況，發布到公開的訪客連結頁面"
+                                  >
+                                    {loading.publishing ? '發布中...' : '更新公開頁面'}
+                                  </Button>
+                               )}
+                          </div>
+                      </div>
+                  </header>
+                  
+                  {loading.classes ? <p className="text-center p-4">正在載入班級列表...</p> : !activeClassId && user ? (
+                       <div className="p-10 bg-white rounded-xl shadow-lg border-2 border-dashed border-gray-300 text-center text-gray-500">
+                         <p className="text-xl font-medium mb-2">{classes.length === 0 ? "歡迎使用！" : "請選擇一個班級以開始"}</p>
+                         <p>{classes.length === 0 ? "請點擊「新增班級」按鈕，建立您的第一個班級。" : ""}</p>
+                       </div>
+                  ) : (
+                      <main>
+                          <div className="flex flex-wrap justify-between items-center gap-x-4 gap-y-2 mb-2">
+                             <h2 className="text-2xl font-bold text-gray-800">{activeClassName}</h2>
+                             <div className="flex flex-wrap items-center gap-4">
+                               <Button onClick={() => setModal({ type: 'assignment', data: null })} className="bg-purple-500 hover:bg-purple-600">＋ 新增作業</Button>
+                               <Button onClick={handleCopyAllUnsubmitted} className="bg-pink-500 hover:bg-pink-600">複製全班未繳總表</Button>
+                               <Button 
+                                 onClick={() => setIsClearCompletedModalOpen(true)} 
+                                 disabled={completedAssignments.length === 0} 
+                                 className="bg-red-600 hover:bg-red-700"
+                                 title={completedAssignments.length === 0 ? "目前沒有已完成的作業可清除" : "清除所有已完成的作業"}
+                                >
+                                 清除已完成作業 ({completedAssignments.length})
+                               </Button>
+                             </div>
+                          </div>
+                          {loading.data ? <p className="text-center p-4">正在載入 {activeClassName} 的資料...</p> : (
+                              <>
+                                <AssignmentTable 
+                                  students={students} 
+                                  assignments={sortedAssignments} 
+                                  onStatusChange={handleStatusChange} 
+                                  getDisplayStatus={getDisplayStatus} 
+                                  onEditStudent={(student) => setModal({ type: 'student', data: student })} 
+                                  onEditAssignment={(assignment) => setModal({ type: 'assignment', data: assignment })} 
+                                  onCopyUnsubmitted={handleCopyUnsubmitted} 
+                                  onCopyStudentDefaulterList={handleCopyStudentDefaulterList}
+                                  handleDragStart={handleDragStart}
+                                  handleDragOver={handleDragOver}
+                                  handleDrop={handleDrop}
+                                  draggedAssignmentId={draggedAssignmentId}
+                                  now={now}
+                                  getSeatNumber={getSeatNumber}
+                                />
+                                 <div className="mt-4 flex gap-4">
+                                  <Button onClick={() => setModal({ type: 'student', data: null })} className="bg-blue-500 hover:bg-blue-600">＋ 批次新增學生</Button>
+                                 </div>
+                              </>
+                          )}
+                      </main>
+                  )}
+              </div>
+          );
+      }
+      
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(<App />);
+    </script>
+</body>
+</html>

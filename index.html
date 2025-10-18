@@ -227,10 +227,7 @@
               if (classIdFromUrl) {
                   setIsVisitorMode(true);
                   setLoading(p => ({...p, auth: false, data: true}));
-                  
-                  // 修正 #1：路徑已修正
                   const publicDocRef = firestoreInstance.doc(`artifacts/${appId}/publicData/${classIdFromUrl}`);
-                  
                   publicDocRef.get().then(doc => {
                       if (doc.exists) {
                           setVisitorData(doc.data());
@@ -368,7 +365,7 @@
           };
 
           const handlePublishPublicData = async () => {
-              if (!db || !activeClassId || !students || students.length === 0) {
+              if (!db || !activeClassId || students.length === 0) {
                   showNotification('沒有資料可發布！');
                   return;
               }
@@ -384,7 +381,6 @@
               };
 
               try {
-                  // 修正 #2：路徑已修正
                   const publicDocRef = db.doc(`artifacts/${appId}/publicData/${activeClassId}`);
                   await publicDocRef.set(publicDataPayload);
                   showNotification(`成功更新「${activeClassName}」的公開頁面！`);
@@ -445,78 +441,43 @@
               setIsDeleting(true);
               try {
                   if (modal.type === 'class') {
-                      // ==================
-                      // 🔧【權限修正】
-                      // 拆分批次操作，避免安全規則衝突
-                      // ==================
+                      // ⭐️ 採用最高效的「單一批次」寫法
+                      // 這需要在 Firestore Rules 中設定正確的 `allow write` 權限
+                      const batch = db.batch();
                       const classIdToDelete = modal.data.id;
-                      
-                      // --- 步驟 1：批次處理學生、作業、公開頁面 ---
-                      const batch1 = db.batch(); 
-                      
-                      // 1. 查詢學生和作業
+
                       const sQuery = db.collection(`artifacts/${appId}/public/data/students`).where("classId", "==", classIdToDelete).where("userId", "==", user.uid);
                       const aQuery = db.collection(`artifacts/${appId}/public/data/assignments`).where("classId", "==", classIdToDelete).where("userId", "==", user.uid);
                       
                       const [sSnap, aSnap] = await Promise.all([sQuery.get(), aQuery.get()]);
                       
-                      // 2. 加入批次：刪除所有學生和作業
-                      sSnap.forEach(d => batch1.delete(d.ref)); 
-                      aSnap.forEach(d => batch1.delete(d.ref));
+                      sSnap.forEach(d => batch.delete(d.ref));
+                      aSnap.forEach(d => batch.delete(d.ref));
                       
-                      // 3. 加入批次：清空(set)公開頁面
-                      // (因為 data/classes 文件此時還在，權限檢查會通過)
-                      const publicDocRef = db.doc(`artifacts/${appId}/publicData/${classIdToDelete}`);
-                      batch1.set(publicDocRef, { 
-                          className: `${modal.data.name} (已刪除)`, 
-                          students: [], 
-                          assignments: [], 
-                          lastUpdated: firebase.firestore.FieldValue.serverTimestamp() 
-                      });
+                      batch.delete(db.doc(`artifacts/${appId}/public/data/classes/${classIdToDelete}`));
+                      batch.delete(db.doc(`artifacts/${appId}/publicData/${classIdToDelete}`));
 
-                      // 4. 執行第一批次
-                      await batch1.commit();
+                      await batch.commit();
                       
-                      // --- 步驟 2：單獨刪除私有的班級文件 ---
-                      // (在第一批次成功後才執行)
-                      await db.doc(`artifacts/${appId}/public/data/classes/${classIdToDelete}`).delete();
-
-                      // --- 步驟 3：收尾 ---
                       const remainingClasses = classes.filter(c => c.id !== classIdToDelete);
-                      setActiveClassId(remainingClasses.length > 0 ? remainingClasses[0].id : null); 
-                      
+                      setActiveClassId(remainingClasses.length > 0 ? remainingClasses[0].id : null);
                       showNotification(`班級 ${modal.data.name} 及其所有資料已成功刪除！`);
 
                   } else if (modal.type === 'student') {
-                    // 刪除單一學生
                     await db.doc(`artifacts/${appId}/public/data/students/${modal.data.id}`).delete();
-                    showNotification(`學生 ${modal.data.name} 已成功刪除！`);
-
                   } else if (modal.type === 'assignment') { 
-                      // 刪除單一作業，並移除所有學生的相關狀態
                       const batch = db.batch();
-                      const assignmentIdToDelete = modal.data.id;
-                      
-                      // 準備刪除作業本身
-                      batch.delete(db.doc(`artifacts/${appId}/public/data/assignments/${assignmentIdToDelete}`));
-                      
-                      // 準備移除所有學生的此作業狀態
+                      const id = modal.data.id;
                       students.forEach(s => {
-                          // 檢查學生是否有這個作業的狀態，有的話才加入更新
-                          if (s.statuses?.[assignmentIdToDelete]) {
+                          if (s.statuses?.[id]) {
                               const studentRef = db.doc(`artifacts/${appId}/public/data/students/${s.id}`);
-                              // 使用 FieldValue.delete() 來移除特定欄位
-                              batch.update(studentRef, { [`statuses.${assignmentIdToDelete}`]: firebase.firestore.FieldValue.delete() });
+                              batch.update(studentRef, { [`statuses.${id}`]: firebase.firestore.FieldValue.delete() });
                           }
                       });
-                      
+                      batch.delete(db.doc(`artifacts/${appId}/public/data/assignments/${id}`));
                       await batch.commit();
-                      showNotification(`作業 ${modal.data.title} 已成功刪除！`);
                   }
-                  
-                  // 無論刪除哪種類型，最後都關閉 Modal
                   setModal({ type: null, data: null });
-
               } catch (error) { 
                   console.error("刪除失敗:", error); 
                   showNotification(`刪除失敗: ${error.message}`); 
@@ -996,3 +957,4 @@
     </script>
 </body>
 </html>
+

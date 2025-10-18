@@ -442,39 +442,70 @@ const handleDelete = async () => {
               try {
                   if (modal.type === 'class') {
                       const batch = db.batch();
-                      const sQuery = db.collection(`artifacts/${appId}/public/data/students`).where("classId", "==", modal.data.id).where("userId", "==", user.uid);
-                      const aQuery = db.collection(`artifacts/${appId}/public/data/assignments`).where("classId", "==", modal.data.id).where("userId", "==", user.uid);
+                      const classIdToDelete = modal.data.id; // 先取得班級 ID
+
+                      // 1. 查詢並準備刪除該班級下的所有學生
+                      const sQuery = db.collection(`artifacts/${appId}/public/data/students`).where("classId", "==", classIdToDelete).where("userId", "==", user.uid);
+                      // 2. 查詢並準備刪除該班級下的所有作業
+                      const aQuery = db.collection(`artifacts/${appId}/public/data/assignments`).where("classId", "==", classIdToDelete).where("userId", "==", user.uid);
+                      
+                      // 平行執行查詢
                       const [sSnap, aSnap] = await Promise.all([sQuery.get(), aQuery.get()]);
-                      sSnap.forEach(d => batch.delete(d.ref));
+                      
+                      // 將要刪除的文件加入批次處理
+                      sSnap.forEach(d => batch.delete(d.ref)); 
                       aSnap.forEach(d => batch.delete(d.ref));
-                      batch.delete(db.doc(`artifacts/${appId}/public/data/classes/${modal.data.id}`));
+                      
+                      // 3. 準備刪除班級本身的文件
+                      batch.delete(db.doc(`artifacts/${appId}/public/data/classes/${classIdToDelete}`));
+                      
+                      // 4. 【⭐️⭐️⭐️ 最終修正！！⭐️⭐️⭐️】準備刪除對應的公開快照文件 (路徑已修正！)
+                      batch.delete(db.doc(`artifacts/${appId}/public/publicData/${classIdToDelete}`)); 
 
-                      // 【⭐️ 再次確認：這裡的路徑必須有 /public/ ⭐️】
-                      batch.delete(db.doc(`artifacts/${appId}/public/publicData/${modal.data.id}`));
-
+                      // 5. 執行所有刪除操作
                       await batch.commit();
-                      // 切換到另一個班級，避免停在空白
-                      setActiveClassId(classes.length > 1 ? classes.filter(c => c.id !== modal.data.id)[0]?.id || null : null);
+                      
+                      // 刪除後自動切換到另一個班級 (如果有的話)
+                      const remainingClasses = classes.filter(c => c.id !== classIdToDelete);
+                      setActiveClassId(remainingClasses.length > 0 ? remainingClasses[0].id : null); 
+                      
+                      showNotification(`班級 ${modal.data.name} 及其所有資料已成功刪除！`);
+
                   } else if (modal.type === 'student') {
+                    // 刪除單一學生
                     await db.doc(`artifacts/${appId}/public/data/students/${modal.data.id}`).delete();
-                  } else if (modal.type === 'assignment') {
+                    showNotification(`學生 ${modal.data.name} 已成功刪除！`);
+
+                  } else if (modal.type === 'assignment') { 
+                      // 刪除單一作業，並移除所有學生的相關狀態
                       const batch = db.batch();
-                      const id = modal.data.id;
+                      const assignmentIdToDelete = modal.data.id;
+                      
+                      // 準備刪除作業本身
+                      batch.delete(db.doc(`artifacts/${appId}/public/data/assignments/${assignmentIdToDelete}`));
+                      
+                      // 準備移除所有學生的此作業狀態
                       students.forEach(s => {
-                          if (s.statuses?.[id]) {
+                          // 檢查學生是否有這個作業的狀態，有的話才加入更新
+                          if (s.statuses?.[assignmentIdToDelete]) {
                               const studentRef = db.doc(`artifacts/${appId}/public/data/students/${s.id}`);
-                              batch.update(studentRef, { [`statuses.${id}`]: firebase.firestore.FieldValue.delete() });
+                              // 使用 FieldValue.delete() 來移除特定欄位
+                              batch.update(studentRef, { [`statuses.${assignmentIdToDelete}`]: firebase.firestore.FieldValue.delete() });
                           }
                       });
-                      batch.delete(db.doc(`artifacts/${appId}/public/data/assignments/${id}`));
+                      
                       await batch.commit();
+                      showNotification(`作業 ${modal.data.title} 已成功刪除！`);
                   }
+                  
+                  // 無論刪除哪種類型，最後都關閉 Modal
                   setModal({ type: null, data: null });
-              } catch (error) {
-                  console.error("刪除失敗:", error);
-                  showNotification(`刪除失敗: ${error.message}`);
-              } finally {
-                  setIsDeleting(false);
+
+              } catch (error) { 
+                  console.error("刪除失敗:", error); 
+                  showNotification(`刪除失敗: ${error.message}`); 
+              } finally { 
+                  setIsDeleting(false); 
               }
           };
 
@@ -949,4 +980,5 @@ const handleDelete = async () => {
     </script>
 </body>
 </html>
+
 

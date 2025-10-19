@@ -441,8 +441,6 @@
               setIsDeleting(true);
               try {
                   if (modal.type === 'class') {
-                      // ⭐️ 採用最高效的「單一批次」寫法
-                      // 這需要在 Firestore Rules 中設定正確的 `allow write` 權限
                       const batch = db.batch();
                       const classIdToDelete = modal.data.id;
 
@@ -619,6 +617,9 @@
               setStatusChangeModal({ isOpen: false, student: null, assignment: null });
           };
 
+          // ==================
+          // 🔧 格式修正 #1
+          // ==================
           const handleCopyUnsubmitted = (assignmentId) => {
               const className = isVisitorMode ? (visitorData?.className || '') : activeClassName;
               const dataSet = isVisitorMode ? (visitorData?.assignments || []) : assignments;
@@ -629,30 +630,35 @@
               const unsubmittedStudents = studentSet.filter(s => getDisplayStatus(s, assignment) === 'unsubmitted').map(s => getSeatNumber(s.name));
               const d = new Date(assignment.dueDate?.seconds ? assignment.dueDate.seconds * 1000 : assignment.dueDate);
               const dateStr = `${d.getMonth() + 1}/${d.getDate()}`;
-              let text = `【${className}未繳作業名單】\n\n`;
-              text += `-${assignment.title}(${dateStr}截止) :\n  ${unsubmittedStudents.length > 0 ? unsubmittedStudents.join(', ') : '無'}`;
+              let text = `【${className}未繳作業名單】\n`; // 移除一個 \n
+              text += `-${assignment.title}(${dateStr}截止) :${unsubmittedStudents.length > 0 ? unsubmittedStudents.join(', ') : '無'}`; // 移除 \n 和空格
               copyToClipboard(text);
           };
 
+          // ==================
+          // 🔧 格式修正 #2
+          // ==================
           const handleCopyAllUnsubmitted = () => {
               const className = isVisitorMode ? (visitorData?.className || '') : activeClassName;
               const dataSet = isVisitorMode ? (visitorData?.assignments || []) : sortedAssignments;
               const studentSet = isVisitorMode ? (visitorData?.students || []) : students;
 
-              let fullReport = `【${className}未繳作業名單】\n\n`;
+              let fullReport = `【${className}未繳作業名單】\n`; // 移除一個 \n
               let hasUnsubmitted = false;
               const unsubmittedAssignments = dataSet.filter(assignment => studentSet.some(s => getDisplayStatus(s, assignment) === 'unsubmitted'));
-              unsubmittedAssignments.forEach((assignment, index) => {
+              
+              const reportLines = [];
+              unsubmittedAssignments.forEach((assignment) => {
                   hasUnsubmitted = true;
                   const unsubmittedStudents = studentSet.filter(s => getDisplayStatus(s, assignment) === 'unsubmitted').map(s => getSeatNumber(s.name));
                   const d = new Date(assignment.dueDate?.seconds ? assignment.dueDate.seconds * 1000 : assignment.dueDate);
                   const dateStr = `${d.getMonth() + 1}/${d.getDate()}`;
-                  fullReport += `-${assignment.title}(${dateStr}截止) :\n  ${unsubmittedStudents.join(', ')}`;
-                  if (index < unsubmittedAssignments.length - 1) {
-                      fullReport += '\n\n';
-                  }
+                  reportLines.push(`-${assignment.title}(${dateStr}截止) :${unsubmittedStudents.join(', ')}`); 
               });
-              if (!hasUnsubmitted) {
+
+              if (hasUnsubmitted) {
+                  fullReport += reportLines.join('\n'); // 用單一 \n 串接
+              } else {
                   fullReport = `【${className}】太棒了！所有項目都已繳齊！`;
               }
               copyToClipboard(fullReport.trim());

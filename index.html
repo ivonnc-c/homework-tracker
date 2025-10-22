@@ -23,19 +23,27 @@
     <script type="text/babel">
       const { useState, useEffect, useCallback, useMemo } = React;
 
+      // =======================================================================
+      // ⭐️⭐️⭐️【 使用者設定區塊 】⭐️⭐️⭐️
+      // 請將下方 firebaseConfig 物件的內容，替換成您自己在 Firebase 專案中取得的設定。
+      // =======================================================================
+      const firebaseConfig = {
+          apiKey: "AIzaSyXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+          authDomain: "your-project-id.firebaseapp.com",
+          projectId: "your-project-id",
+          storageBucket: "your-project-id.appspot.com",
+          messagingSenderId: "123456789012",
+          appId: "1:123456789012:web:xxxxxxxxxxxxxxxxxxxxxx"
+      };
+      // =======================================================================
+      // ⭐️⭐️⭐️【 設定區塊結束 】⭐️⭐️⭐️
+      // =======================================================================
+
       const getVisitorLink = (classId) => {
         if (!classId) return '';
         return `${window.location.origin}${window.location.pathname}?classId=${classId}`;
       };
       
-      const firebaseConfig = {
-          apiKey: "AIzaSyACc1hEmcC7GR84_jvtYb2rG5bfErCenCc",
-          authDomain: "homeworktracker-32647.firebaseapp.com",
-          projectId: "homeworktracker-32647",
-          storageBucket: "homeworktracker-32647.appspot.com",
-          messagingSenderId: "614728738497",
-          appId: "1:614728738497:web:222fcb82c471e7095b5640"
-      };
       const appId = 'super-tracker-default';
 
       const STATUS_MAP = {
@@ -617,9 +625,6 @@
               setStatusChangeModal({ isOpen: false, student: null, assignment: null });
           };
 
-          // ==================
-          // 🔧 格式修正 #1
-          // ==================
           const handleCopyUnsubmitted = (assignmentId) => {
               const className = isVisitorMode ? (visitorData?.className || '') : activeClassName;
               const dataSet = isVisitorMode ? (visitorData?.assignments || []) : assignments;
@@ -630,20 +635,17 @@
               const unsubmittedStudents = studentSet.filter(s => getDisplayStatus(s, assignment) === 'unsubmitted').map(s => getSeatNumber(s.name));
               const d = new Date(assignment.dueDate?.seconds ? assignment.dueDate.seconds * 1000 : assignment.dueDate);
               const dateStr = `${d.getMonth() + 1}/${d.getDate()}`;
-              let text = `【${className}未繳作業名單】\n`; // 移除一個 \n
-              text += `-${assignment.title}(${dateStr}截止) :${unsubmittedStudents.length > 0 ? unsubmittedStudents.join(', ') : '無'}`; // 移除 \n 和空格
+              let text = `【${className}未繳作業名單】\n`;
+              text += `-${assignment.title}(${dateStr}截止) :${unsubmittedStudents.length > 0 ? unsubmittedStudents.join(', ') : '無'}`;
               copyToClipboard(text);
           };
 
-          // ==================
-          // 🔧 格式修正 #2
-          // ==================
           const handleCopyAllUnsubmitted = () => {
               const className = isVisitorMode ? (visitorData?.className || '') : activeClassName;
               const dataSet = isVisitorMode ? (visitorData?.assignments || []) : sortedAssignments;
               const studentSet = isVisitorMode ? (visitorData?.students || []) : students;
 
-              let fullReport = `【${className}未繳作業名單】\n`; // 移除一個 \n
+              let fullReport = `【${className}未繳作業名單】\n`;
               let hasUnsubmitted = false;
               const unsubmittedAssignments = dataSet.filter(assignment => studentSet.some(s => getDisplayStatus(s, assignment) === 'unsubmitted'));
               
@@ -657,7 +659,7 @@
               });
 
               if (hasUnsubmitted) {
-                  fullReport += reportLines.join('\n'); // 用單一 \n 串接
+                  fullReport += reportLines.join('\n');
               } else {
                   fullReport = `【${className}】太棒了！所有項目都已繳齊！`;
               }
@@ -733,7 +735,20 @@
                   const { className, students, assignments, lastUpdated } = visitorData;
                   const formattedDate = lastUpdated ? new Date(lastUpdated.seconds * 1000).toLocaleString('zh-TW', { hour12: false }) : 'N/A';
                   
-                  const visitorSortedAssignments = [...(assignments || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
+                  // ==================
+                  // 🔧 排序修正
+                  // ==================
+                  const visitorSortedAssignments = [...(assignments || [])].sort((a, b) => {
+                      const isPastDueA = a.dueDate ? new Date(a.dueDate?.seconds ? a.dueDate.seconds * 1000 : a.dueDate).getTime() < now : false;
+                      const isCompleteA = isPastDueA && !(students || []).some(student => getDisplayStatus(student, a) === 'unsubmitted');
+                      const isPastDueB = b.dueDate ? new Date(b.dueDate?.seconds ? b.dueDate.seconds * 1000 : b.dueDate).getTime() < now : false;
+                      const isCompleteB = isPastDueB && !(students || []).some(student => getDisplayStatus(student, b) === 'unsubmitted');
+                      
+                      if (isCompleteA && !isCompleteB) return 1;
+                      if (!isCompleteA && isCompleteB) return -1;
+                      
+                      return (a.order || 0) - (b.order || 0);
+                  });
 
                   return (
                       <div className="min-h-screen bg-gray-100 font-sans p-4 sm:p-6">

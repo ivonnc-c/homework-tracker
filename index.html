@@ -700,44 +700,53 @@
             copyToClipboard(fullReport.trim());
         };
 
-        // 🚀 【功能 2：匯出催繳總表 (for 合併列印)】
+// 🚀 【功能 2：匯出催繳總表 (for 合併列印)】- 移除空值檢查
         const handleExportMailMergeCSV = () => {
             const studentSet = isVisitorMode ? (visitorData?.students || []) : students;
             const dataSet = isVisitorMode ? (visitorData?.assignments || []) : sortedAssignments;
 
+            // 修正點：如果沒有學生或作業，直接返回 (保留這個基本檢查)
             if (!studentSet.length || !dataSet.length) {
                 showNotification("沒有資料可匯出！");
                 return;
             }
 
             const csvHeader = "座號姓名,未繳作業清單\n";
-            
-            const csvRows = studentSet.map(student => {
-                const unsubmittedList = dataSet
-                    .filter(assignment => getDisplayStatus(student, assignment) === 'unsubmitted')
-                    .map(assignment => assignment.title) // 只取作業標題
-                    .join('、'); // 使用「、」符號分隔
-                
-                // 確保姓名和清單中的引號被正確跳脫
-                const studentName = (student.name || '').replace(/"/g, '""');
-                const listText = unsubmittedList.replace(/"/g, '""');
 
-                return `"${studentName}","${listText}"\n`;
-            }).join('');
+            const csvRows = studentSet
+                .map(student => {
+                    const unsubmittedList = dataSet
+                        .filter(assignment => getDisplayStatus(student, assignment) === 'unsubmitted')
+                        .map(assignment => assignment.title)
+                        .join('、');
+
+                    if (!unsubmittedList) {
+                        return null;
+                    }
+
+                    const studentName = (student.name || '').replace(/"/g, '""');
+                    const listText = unsubmittedList.replace(/"/g, '""');
+
+                    return `"${studentName}","${listText}"\n`;
+                })
+                .filter(Boolean)
+                .join('');
+
+            // 【移除】原本檢查 csvRows 是否為空的區塊已移除
 
             const csvContent = csvHeader + csvRows;
 
-            // 建立並觸發下載 (加上 BOM for Excel 中文)
             const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8-sig;' });
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
-            
+
             const className = isVisitorMode ? (visitorData?.className || '班級') : activeClassName;
             link.setAttribute('download', `${className}_催繳總表.csv`);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
 
+            // 【保留】下載開始的提示
             showNotification("CSV 催繳總表已開始下載！");
         };
 
@@ -1054,3 +1063,4 @@
     </script>
 </body>
 </html>
+

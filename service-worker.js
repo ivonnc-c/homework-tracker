@@ -12,6 +12,8 @@ const urlsToCache = [
   'https://www.gstatic.com/firebasejs/9.15.0/firebase-auth-compat.js',
   'https://www.gstatic.com/firebasejs/9.15.0/firebase-firestore-compat.js'
   // 注意：如果您有使用圖示，也請將圖示檔案路徑加入這裡，例如：'icon-192.png', 'icon-512.png'
+  'icon-192.png',
+  'icon-512.png'
 ];
 
 // 安裝 Service Worker 並快取 App Shell
@@ -91,4 +93,5 @@ self.addEventListener('activate', event => {
       );
     })
   );
+
 });

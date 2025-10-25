@@ -598,20 +598,22 @@
             }
         };
 
-        const handleSignIn = async () => {
-            setLoginError('');
-            const provider = new firebase.auth.GoogleAuthProvider();
-            try {
-                await auth.signInWithPopup(provider);
-            } catch (error) {
-                console.error("Google 登入失敗:", error);
-                if (error.code === 'auth/operation-not-supported-in-this-environment') {
-                    setLoginError("Google 登入無法在目前預覽環境中使用，請在部署後的正式網站上操作。");
-                } else {
-                    setLoginError(`登入失敗: ${error.message}`);
-                }
-            }
-        };
+       // ✨ 修改後的版本：改用 signInWithRedirect ✨
+const handleSignIn = async () => {
+    setLoginError('');
+    const provider = new firebase.auth.GoogleAuthProvider();
+    try {
+        // 將 signInWithPopup 改成 signInWithRedirect
+        await auth.signInWithRedirect(provider);
+        // 注意：signInWithRedirect 會使頁面跳轉，
+        // 所以通常不會有 await 後續的程式碼在這裡執行。
+        // 登入結果會在頁面跳轉回來後處理。
+    } catch (error) {
+        console.error("Google 登入重新導向啟動失敗:", error);
+        // 這裡的錯誤通常是啟動跳轉前的錯誤，例如網路問題或 Firebase 設定錯誤
+        setLoginError(`啟動登入流程失敗: ${error.message}`);
+    }
+};
 
         const handleSignOut = async () => {
             try {
@@ -1077,5 +1079,6 @@
 </script>
 </body>
 </html>
+
 
 

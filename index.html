@@ -266,7 +266,24 @@
             setAuth(authInstance);
             setDb(firestoreInstance);
             firebase.firestore.setLogLevel('error');
-            
+            authInstance
+      .getRedirectResult()
+      .then((result) => {
+        if (result.user) {
+          // 如果是從 Google 登入跳轉回來的，用戶資訊會在 result.user 中
+          console.log("登入成功 (Redirect):", result.user.uid);
+          // setUser(result.user); // 通常 onAuthStateChanged 會處理，這裡可以不用重複設定
+        }
+      })
+      .catch((error) => {
+        // 處理跳轉回來後的錯誤
+        console.error("Google 登入 Redirect 結果錯誤:", error);
+         if (error.code === 'auth/account-exists-with-different-credential') {
+           setLoginError("此 Google 帳號已被用於其他登入方式，請嘗試其他帳號。");
+         } else {
+           setLoginError(`登入失敗: ${error.message}`);
+         }
+      });
             if (classIdFromUrl) {
                 setIsVisitorMode(true);
                 setLoading(p => ({...p, auth: false, data: true}));
@@ -1079,6 +1096,7 @@ const handleSignIn = async () => {
 </script>
 </body>
 </html>
+
 
 
 

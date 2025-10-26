@@ -1,9 +1,11 @@
 // service-worker.js
 
 const CACHE_NAME = 'homework-tracker-cache-v1';
-// 需要快取的 App Shell 資源 (核心HTML + 主要的CDN函式庫)
+// ⭐️【修正】下方陣列已加入 icon-192.png 和 icon-512.png
 const urlsToCache = [
   './', // 代表 index.html 或您主要的 HTML 檔案
+  'icon-192.png', // ⭐️ 新增
+  'icon-512.png', // ⭐️ 新增
   'https://cdn.tailwindcss.com',
   'https://unpkg.com/react@18/umd/react.development.js',
   'https://unpkg.com/react-dom@18/umd/react-dom.development.js',
@@ -11,9 +13,6 @@ const urlsToCache = [
   'https://www.gstatic.com/firebasejs/9.15.0/firebase-app-compat.js',
   'https://www.gstatic.com/firebasejs/9.15.0/firebase-auth-compat.js',
   'https://www.gstatic.com/firebasejs/9.15.0/firebase-firestore-compat.js'
-  // 注意：如果您有使用圖示，也請將圖示檔案路徑加入這裡，例如：'icon-192.png', 'icon-512.png'
-  'icon-192.png',
-  'icon-512.png'
 ];
 
 // 安裝 Service Worker 並快取 App Shell
@@ -53,7 +52,7 @@ self.addEventListener('fetch', event => {
                   return networkResponse;
                }
                // 對於其他無效的回應，拋出錯誤
-               // throw new Error('Invalid network response'); // 或者返回一個預設的離線頁面
+                // throw new Error('Invalid network response'); // 或者返回一個預設的離線頁面
                 return networkResponse; // 暫時先直接返回，避免嚴格模式下的小問題
             }
 
@@ -93,5 +92,4 @@ self.addEventListener('activate', event => {
       );
     })
   );
-
 });

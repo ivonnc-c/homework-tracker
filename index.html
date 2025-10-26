@@ -266,19 +266,30 @@
             setAuth(authInstance);
             setDb(firestoreInstance);
             firebase.firestore.setLogLevel('error');
-            console.log("頁面載入：開始檢查 getRedirectResult...");
-            authInstance
-      .getRedirectResult()
-      .then((result) => {
-          console.log("getRedirectResult .then() - result:", result);
-        if (result && result.user) {
-          // 如果是從 Google 登入跳轉回來的，用戶資訊會在 result.user 中
-          console.log("登入成功 (來自 Redirect):", result.user.uid);
-          // setUser(result.user); // 通常 onAuthStateChanged 會處理，這裡可以不用重複設定
-        } else {
-              console.log("getRedirectResult .then() - 沒有偵測到 user 物件。");
-            }
-      })
+// 👇👇👇 新增：從這裡開始設定 Persistence 並檢查 Redirect Result 👇👇👇
+        authInstance.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
+            .then(() => {
+                console.log("Auth persistence set to LOCAL.");
+                // 在設定完持久性之後，才開始檢查 Redirect Result
+                console.log("頁面載入：開始檢查 getRedirectResult..."); // Log 1 (位置調整)
+                return authInstance.getRedirectResult();
+            })
+            .then((result) => {
+                console.log("getRedirectResult .then() - result:", result); // Log 2
+                if (result && result.user) {
+                   console.log("登入成功 (來自 Redirect):", result.user.uid);
+                } else {
+                   console.log("getRedirectResult .then() - 沒有偵測到 user 物件。");
+                }
+            })
+            .catch((error) => {
+                console.error("設定 Persistence 或 getRedirectResult 出錯:", error); // Log 3 (合併錯誤處理)
+                 if (error.code === 'auth/account-exists-with-different-credential') {
+                   setLoginError("此 Google 帳號已被用於其他登入方式，請嘗試其他帳號。");
+                 } else {
+                   setLoginError(`登入失敗: ${error.message}`);
+                 }
+            });
       .catch((error) => {
         // 處理跳轉回來後的錯誤
         console.error("getRedirectResult .catch() - 錯誤:", error);
@@ -1102,6 +1113,7 @@ const handleSignIn = async () => {
 </script>
 </body>
 </html>
+
 
 
 

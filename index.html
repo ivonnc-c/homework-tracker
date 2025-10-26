@@ -235,7 +235,28 @@
         const [formState, setFormState] = useState({});
         const [notification, setNotification] = useState('');
         const [draggedAssignmentId, setDraggedAssignmentId] = useState(null);
-        
+                // ✨ 新增：用於 Email/密碼 登入/註冊的狀態 ✨
+        const [email, setEmail] = useState('');
+        const [password, setPassword] = useState('');
+        const [isRegistering, setIsRegistering] = useState(false); // 控制顯示登入或註冊表單
+
+        // ✨ 新增：處理 Email/密碼 登入的函式 (尚未實作邏輯) ✨
+        const handleEmailSignIn = async (e) => {
+          e.preventDefault(); // 防止表單提交跳轉頁面
+          setLoginError('');
+          console.log("嘗試 Email 登入:", email);
+          // TODO: 在第三階段加入 signInWithEmailAndPassword 邏輯
+           setLoginError('Email/密碼 登入功能尚未實作');
+        };
+
+        // ✨ 新增：處理 Email/密碼 註冊的函式 (尚未實作邏輯) ✨
+        const handleEmailSignUp = async (e) => {
+          e.preventDefault();
+          setLoginError('');
+          console.log("嘗試 Email 註冊:", email);
+          // TODO: 在第二階段加入 createUserWithEmailAndPassword 邏輯
+           setLoginError('Email/密碼 註冊功能尚未實作');
+        };
         useEffect(() => {
             const timer = setInterval(() => setNow(new Date().getTime()), 60000);
             return () => clearInterval(timer);
@@ -897,28 +918,7 @@ const handleSignIn = async () => {
             return null;
         }
 
-        // ✨ 新增：用於 Email/密碼 登入/註冊的狀態 ✨
-        const [email, setEmail] = useState('');
-        const [password, setPassword] = useState('');
-        const [isRegistering, setIsRegistering] = useState(false); // 控制顯示登入或註冊表單
 
-        // ✨ 新增：處理 Email/密碼 登入的函式 (尚未實作邏輯) ✨
-        const handleEmailSignIn = async (e) => {
-          e.preventDefault(); // 防止表單提交跳轉頁面
-          setLoginError('');
-          console.log("嘗試 Email 登入:", email);
-          // TODO: 在第三階段加入 signInWithEmailAndPassword 邏輯
-           setLoginError('Email/密碼 登入功能尚未實作');
-        };
-
-        // ✨ 新增：處理 Email/密碼 註冊的函式 (尚未實作邏輯) ✨
-        const handleEmailSignUp = async (e) => {
-          e.preventDefault();
-          setLoginError('');
-          console.log("嘗試 Email 註冊:", email);
-          // TODO: 在第二階段加入 createUserWithEmailAndPassword 邏輯
-           setLoginError('Email/密碼 註冊功能尚未實作');
-        };
 
         // ✨ 修改後的未登入畫面 ✨
         if (!user) {
@@ -1186,11 +1186,3 @@ const handleSignIn = async () => {
 </script>
 </body>
 </html>
-
-
-
-
-
-
-
-

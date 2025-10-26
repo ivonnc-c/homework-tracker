@@ -220,7 +220,8 @@
         const [visitorError, setVisitorError] = useState(null);
 
         // --- 登入/註冊/帳號連結 State ---
-        const [loginError, setLoginError] = useState('');
+        // ⭐️ 【修改】使用 loginMessage state 來顯示成功(綠色)或失敗(紅色)訊息
+        const [loginMessage, setLoginMessage] = useState({ type: '', text: '' });
         const [authMode, setAuthMode] = useState('login'); // 'login' or 'register'
         const [email, setEmail] = useState('');
         const [password, setPassword] = useState('');
@@ -272,6 +273,14 @@
 
             setAuth(authInstance);
             setDb(firestoreInstance);
+            
+            // =======================================================================
+            // ⭐️⭐️⭐️【 中文化設定 】⭐️⭐️⭐️
+            // 告訴 Firebase 盡量使用繁體中文 (台灣) 回傳錯誤訊息
+            // =======================================================================
+            authInstance.languageCode = 'zh-TW';
+            // =======================================================================
+            
             firebase.firestore.setLogLevel('error');
             
             if (classIdFromUrl) {
@@ -298,7 +307,7 @@
                         // 登入成功後，清除暫存的登入資訊
                         setEmail('');
                         setPassword('');
-                        setLoginError('');
+                        setLoginMessage({ type: '', text: '' });
                         setPendingCredential(null);
                     }
                 });
@@ -449,7 +458,47 @@
             }
         };
 
+        // ⭐️ 【新增】處理從 Modal 來的「連結 Email 帳號」請求
+        const handleLinkEmailAccount = async () => {
+            const { email, password } = formState;
+            if (!email || !password) {
+                showNotification('Email 和密碼為必填。');
+                return;
+            }
+            if (!user) {
+                showNotification('您尚未登入。');
+                return;
+            }
+
+            setIsSaving(true);
+            try {
+                const credential = firebase.auth.EmailAuthProvider.credential(email, password);
+                await user.linkWithCredential(credential);
+                showNotification('Email 帳號連結成功！');
+                setModal({ type: null, data: null });
+            } catch (error) {
+                console.error("Email 帳號連結失敗:", error.code, error.message);
+                if (error.code === 'auth/email-already-in-use') {
+                    showNotification('連結失敗：此 Email 已被其他帳號使用。');
+                } else if (error.code === 'auth/credential-already-in-use') {
+                    showNotification('連結失敗：此 Email/密碼 已連結到您的帳號。');
+                } else if (error.code === 'auth/weak-password') {
+                    showNotification('密碼強度不足，請至少設定 6 個字元。');
+                } else {
+                    showNotification(`連結失敗: ${error.message}`);
+                }
+            } finally {
+                setIsSaving(false);
+            }
+        };
+
         const handleSave = async () => {
+            // ⭐️ 【修改】增加 modal.type === 'linkEmail' 的判斷
+            if (modal.type === 'linkEmail') {
+                await handleLinkEmailAccount();
+                return;
+            }
+
             if (!db || !user || !modal.type) return;
             setIsSaving(true);
             try {
@@ -571,6 +620,8 @@
         const renderModalTitle = () => {
             const titleMap = { class: '班級', student: '學生', assignment: '作業' };
             if (!modal.type) return '';
+            // ⭐️ 【修改】增加 modal.type === 'linkEmail' 的標題
+            if (modal.type === 'linkEmail') return '連結 Email 帳號';
             if (modal.type === 'student' && !modal.data) return '批次新增學生';
             return `${modal.data ? '編輯' : '新增'}${titleMap[modal.type]}`;
         };
@@ -612,12 +663,12 @@
             }
         };
         
-        // --- 登入/註冊/帳號連結 相關函式 ---
+        // --- 登入/註冊/帳號連結 相關函式 (已加入中文化錯誤) ---
 
         const handleEmailLogin = async () => {
-            setLoginError('');
+            setLoginMessage({ type: '', text: '' });
             if (!email || !password) {
-                setLoginError('Email 和密碼為必填。');
+                setLoginMessage({ type: 'error', text: 'Email 和密碼為必填。' });
                 return;
             }
             try {
@@ -626,61 +677,85 @@
                 if (pendingCredential) {
                     await user.linkWithCredential(pendingCredential);
                     setPendingCredential(null);
-                    // 登入後 onAuthStateChanged 會自動處理
-                    // 立即顯示通知，讓使用者知道連結成功
                     showNotification('帳號已成功連結！');
                 }
             } catch (error) {
-                console.error("Email 登入失敗:", error);
-                if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
-                    setLoginError('Email 或密碼錯誤。');
+                console.error("Email 登入失敗:", error.code, error.message);
+                if (error.code === 'auth/user-not-found' || 
+                    error.code === 'auth/wrong-password' || 
+                    error.code === 'auth/invalid-credential' || 
+                    error.code === 'auth/invalid-login-credentials') {
+                    setLoginMessage({ type: 'error', text: 'Email 或密碼錯誤，請再試一次。' });
+                } else if (error.code === 'auth/invalid-email') {
+                    setLoginMessage({ type: 'error', text: 'Email 格式不正確。' });
                 } else {
-                    setLoginError(`登入失敗: ${error.message}`);
+                    setLoginMessage({ type: 'error', text: `登入失敗: ${error.message}` });
                 }
             }
         };
 
         const handleEmailRegister = async () => {
-            setLoginError('');
+            setLoginMessage({ type: '', text: '' });
             if (!email || !password) {
-                setLoginError('Email 和密碼為必填。');
+                setLoginMessage({ type: 'error', text: 'Email 和密碼為必填。' });
                 return;
             }
             try {
                 await auth.createUserWithEmailAndPassword(email, password);
                 // 註冊成功後，onAuthStateChanged 會自動觸發登入
             } catch (error) {
-                console.error("Email 註冊失敗:", error);
+                console.error("Email 註冊失敗:", error.code, error.message);
                 if (error.code === 'auth/weak-password') {
-                    setLoginError('密碼強度不足，請至少設定 6 個字元。');
+                    setLoginMessage({ type: 'error', text: '密碼強度不足，請至少設定 6 個字元。' });
                 } else if (error.code === 'auth/email-already-in-use') {
-                    setLoginError('此 Email 已經被註冊。');
+                    setLoginMessage({ type: 'error', text: '此 Email 已經被註冊。' });
+                } else if (error.code === 'auth/invalid-email') {
+                    setLoginMessage({ type: 'error', text: 'Email 格式不正確。' });
                 } else {
-                    setLoginError(`註冊失敗: ${error.message}`);
+                    setLoginMessage({ type: 'error', text: `註冊失敗: ${error.message}` });
+                }
+            }
+        };
+
+        // ⭐️ 【新增】忘記密碼函式
+        const handlePasswordReset = async () => {
+            setLoginMessage({ type: '', text: '' });
+            if (!email) {
+                setLoginMessage({ type: 'error', text: '請先輸入您的 Email。' });
+                return;
+            }
+            try {
+                await auth.sendPasswordResetEmail(email);
+                setLoginMessage({ type: 'success', text: `密碼重設信件已寄至 ${email}，請檢查您的信箱。` });
+            } catch (error) {
+                console.error("密碼重設失敗:", error.code, error.message);
+                if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-email') {
+                    setLoginMessage({ type: 'error', text: '找不到此 Email 帳號，請確認 Email 是否正確。' });
+                } else {
+                    setLoginMessage({ type: 'error', text: `重設失敗: ${error.message}` });
                 }
             }
         };
 
         const handleSignIn = async () => {
-            setLoginError('');
+            setLoginMessage({ type: '', text: '' });
             setPendingCredential(null); // 清除舊的
             const provider = new firebase.auth.GoogleAuthProvider();
             try {
                 await auth.signInWithPopup(provider);
             } catch (error) {
-                console.error("Google 登入失敗:", error);
+                console.error("Google 登入失敗:", error.code, error.message);
                 if (error.code === 'auth/account-exists-with-different-credential') {
                     setPendingCredential(error.credential);
                     setAuthMode('login'); // 強制切換到登入
-                    // 嘗試從 error.customData.email 取得 email
                     if (error.customData && error.customData.email) {
                         setEmail(error.customData.email);
                     }
-                    setLoginError('此 Google 帳號的 Email 已被註冊。請輸入該 Email 的密碼登入，以連結您的 Google 帳號。');
+                    setLoginMessage({ type: 'error', text: '此 Google 帳號的 Email 已被註冊。請輸入該 Email 的密碼登入，以連結您的 Google 帳號。' });
                 } else if (error.code === 'auth/operation-not-supported-in-this-environment') {
-                    setLoginError("Google 登入無法在目前預覽環境中使用，請在部署後的正式網站上操作。");
+                    setLoginMessage({ type: 'error', text: "Google 登入無法在目前預覽環境中使用，請在部署後的正式網站上操作。" });
                 } else {
-                    setLoginError(`登入失敗: ${error.message}`);
+                    setLoginMessage({ type: 'error', text: `登入失敗: ${error.message}` });
                 }
             }
         };
@@ -855,14 +930,17 @@
                     const defaultState = {
                         class: { name: '', isPublic: false },
                         student: { name: '', studentList: '' },
-                        assignment: { title: '', dueDate: now.toISOString().slice(0,16) }
+                        assignment: { title: '', dueDate: now.toISOString().slice(0,16) },
+                        // ⭐️ 【新增】linkEmail 彈窗的預設值
+                        linkEmail: { email: user?.email || '', password: '' }
                     };
                     setFormState(defaultState[modal.type]);
                 }
             } else {
                 setFormState({});
             }
-        }, [modal]);
+        // ⭐️ 【修改】依賴 user.email，以便在 linkEmail 彈窗中預填
+        }, [modal, user]);
 
         const handleFormChange = (e) => {
            const { id, value, type, checked } = e.target;
@@ -945,6 +1023,7 @@
 
         // =======================================================================
         // ⭐️⭐️⭐️【 登入介面修改區域 】⭐️⭐️⭐️
+        // (已加入「忘記密碼」按鈕 和 loginMessage 提示)
         // =======================================================================
         if (!user) {
             return (
@@ -955,10 +1034,10 @@
                         
                         <div className="mb-4">
                             <div className="flex border border-gray-300 rounded-lg overflow-hidden">
-                                <button onClick={() => { setAuthMode('login'); setLoginError(''); }} className={`flex-1 py-2 text-sm font-medium ${authMode === 'login' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                                <button onClick={() => { setAuthMode('login'); setLoginMessage({ type: '', text: '' }); }} className={`flex-1 py-2 text-sm font-medium ${authMode === 'login' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
                                     登入
                                 </button>
-                                <button onClick={() => { setAuthMode('register'); setLoginError(''); }} className={`flex-1 py-2 text-sm font-medium ${authMode === 'register' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                                <button onClick={() => { setAuthMode('register'); setLoginMessage({ type: '', text: '' }); }} className={`flex-1 py-2 text-sm font-medium ${authMode === 'register' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
                                     註冊
                                 </button>
                             </div>
@@ -969,6 +1048,14 @@
                             <Input id="password" label="密碼" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
                         </div>
                         
+                        {authMode === 'login' && (
+                            <div className="text-right mb-4">
+                                <button type="button" onClick={handlePasswordReset} className="text-sm text-indigo-600 hover:underline focus:outline-none">
+                                    忘記密碼？
+                                </button>
+                            </div>
+                        )}
+
                         {authMode === 'login' ? (
                             <Button onClick={handleEmailLogin} className="w-full bg-indigo-600 hover:bg-indigo-700 mb-4">
                                 使用 Email 登入
@@ -988,7 +1075,13 @@
                            <svg className="w-6 h-6" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"></path><path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"></path><path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.222,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"></path><path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.574l6.19,5.238C39.99,36.59,44,30.865,44,24C44,22.659,43.862,21.35,43.611,20.083z"></path></svg>
                            使用 Google 帳號登入
                         </button>
-                        {loginError && <p className="mt-4 text-sm text-red-600 bg-red-100 p-3 rounded-lg">{loginError}</p>}
+                        
+                        {/* ⭐️ 【修改】顯示 loginMessage (成功或失敗) */}
+                        {loginMessage.text && (
+                            <p className={`mt-4 text-sm p-3 rounded-lg ${loginMessage.type === 'error' ? 'text-red-600 bg-red-100' : 'text-green-600 bg-green-100'}`}>
+                                {loginMessage.text}
+                            </p>
+                        )}
                     </div>
                 </div>
             );
@@ -1004,6 +1097,11 @@
             <div className="min-h-screen bg-gray-100 font-sans p-4 sm:p-6">
                 {notification && (<div className="fixed top-5 right-5 bg-green-500 text-white py-2 px-4 rounded-lg shadow-lg z-50 animate-bounce">{notification}</div>)}
                 
+                {/* // =======================================================================
+                // ⭐️⭐️⭐️【 操作說明 Modal 修改 】⭐️⭐️⭐️
+                // (已加入「帳號連結說明」)
+                // =======================================================================
+                */}
                 <Modal isOpen={isHelpModalOpen} title="操作說明" onClose={() => setIsHelpModalOpen(false)} footer={<Button onClick={() => setIsHelpModalOpen(false)}>關閉</Button>}>
                     <div className="space-y-3 text-gray-700">
                         <div>
@@ -1019,6 +1117,18 @@
                                 <li><b>[個人作業未繳清單]：</b>滑鼠移到該生的座號姓名，點選小圖示複製該生缺交清單（適合聯繫家長）。</li>
                                 <li><b>[匯出催繳總表 (CSV)]：</b>點選上方綠色按鈕，匯出全班的個人未繳清單 (適合 Word 合併列印)。</li>
                                 <li><b>[作業排序]：</b>直接拖曳表格上方的作業標題即可調整欄位順序。</li>
+                            </ul>
+                        </div>
+                        {/* ⭐️ 【新增】帳號連結說明 */}
+                        <div className="border-t pt-3">
+                            <h3 className="font-bold mb-1 text-indigo-600">帳號連結說明</h3>
+                            <ul className="space-y-1 text-sm list-disc list-inside">
+                                <li><b>情境一 (先 Email 註冊)：</b>
+                                    <br />若您先用 Email 註冊，之後想改用 Google 登入 (Email 需相同)，系統會自動提示您輸入「Email 密碼」以完成帳號綁定。
+                                </li>
+                                <li><b>情境二 (先 Google 登入)：</b>
+                                    <br />若您先用 Google 登入，之後想補上 Email/密碼 (方便在不同裝置登入)，請點選主畫面右上角的「連結 Email 帳號」按鈕來新增。
+                                </li>
                             </ul>
                         </div>
                     </div>
@@ -1039,12 +1149,22 @@
 
                 <Modal isOpen={!!modal.type} title={renderModalTitle()} onClose={() => setModal({ type: null, data: null })}
                     footer={<>
-                        {modal.data && <Button onClick={handleDelete} disabled={isDeleting} className="bg-red-600 hover:bg-red-700 mr-auto">{isDeleting ? '刪除中...' : '刪除'}</Button>}
+                        {/* ⭐️ 【修改】linkEmail 模式下不顯示刪除按鈕 */}
+                        {modal.data && modal.type !== 'linkEmail' && <Button onClick={handleDelete} disabled={isDeleting} className="bg-red-600 hover:bg-red-700 mr-auto">{isDeleting ? '刪除中...' : '刪除'}</Button>}
                         <Button onClick={() => setModal({ type: null, data: null })} className="bg-gray-500 hover:bg-gray-600">取消</Button>
-                        <Button onClick={handleSave} disabled={isSaving}>{isSaving ? '儲存中...' : '儲存'}</Button>
+                        <Button onClick={handleSave} disabled={isSaving}>{isSaving ? '儲存中...' : (modal.type === 'linkEmail' ? '連結帳號' : '儲存')}</Button>
                     </>}>
                     { modal.type === 'assignment' && <div className="space-y-4"><Input label="作業/項目名稱" id="title" value={formState.title || ''} onChange={handleFormChange} /><Input label="截止日期與時間" id="dueDate" type="datetime-local" value={formState.dueDate || ''} onChange={handleFormChange} /></div> }
                     
+                    { /* ⭐️ 【新增】linkEmail 彈窗的 UI */ }
+                    { modal.type === 'linkEmail' && (
+                        <div className="space-y-4">
+                            <p className="text-sm text-gray-600">將 Email/密碼 連結到您目前的帳號 ({user.email})，未來您就可以使用任一方式登入。</p>
+                            <Input label="Email" id="email" type="email" value={formState.email || ''} onChange={handleFormChange} />
+                            <Input label="密碼 (請設定一組新密碼)" id="password" type="password" value={formState.password || ''} onChange={handleFormChange} />
+                        </div>
+                    )}
+
                     { modal.type === 'class' && (
                         <div className="space-y-6">
                             <Input label="班級名稱" id="name" value={formState.name || ''} onChange={handleFormChange} />
@@ -1067,7 +1187,7 @@
                             )}
                         </div>
                     )}
-                    { modal.type === 'student' && (modal.data ? <Input label="學生座號/姓名" id="name" value={formState.name || ''} onChange={handleFormChange} /> : <Textarea label="學生名單 (一行一個)" id="studentList" value={formState.studentList || ''} onChange={handleFormChange} placeholder="從 Excel 或文件複製名單貼到這裡，例如：&#10;1號 王小明&#10;2號 陳大華&#10;3號 李美麗" />) }
+                    { modal.type === 'student' && (modal.data ? <Input label="學生座號/姓名" id="name" value={formState.name || ''} onChange={handleFormChange} /> : <Textarea label="學生名單 (一行一個)" id="studentList" value={formState.studentList || ''} onChange={handleFormChange} placeholder="從 Excel 或文件複製名단貼到這裡，例如：&#10;1號 王小明&#10;2號 陳大華&#10;3號 李美麗" />) }
                 </Modal>
                 
                 <Modal isOpen={isClearCompletedModalOpen} title="⚠️ 確認清除已完成作業" onClose={() => setIsClearCompletedModalOpen(false)} footer={<>
@@ -1082,7 +1202,12 @@
                         <p className="mt-4 text-red-600 font-semibold">此操作將會移除這些作業的所有相關紀錄，且無法復原。</p>
                     </div>
                 </Modal>
-
+                
+                {/* // =======================================================================
+                // ⭐️⭐️⭐️【 Header 修改 】⭐️⭐️⭐️
+                // (已加入「連結 Email 帳號」按鈕)
+                // =======================================================================
+                */}
                 <header className="bg-white rounded-xl shadow-lg p-6 mb-6">
                     <div className="flex flex-wrap justify-between items-center gap-4">
                         <div className="flex items-center gap-4">
@@ -1091,6 +1216,8 @@
                         </div>
                         <div className="flex items-center gap-3">
                             <span className="text-sm text-gray-600">歡迎, {user.displayName || user.email}</span>
+                            {/* ⭐️ 【新增】連結 Email 帳號按鈕 */}
+                            <button onClick={() => setModal({ type: 'linkEmail', data: null })} className="text-sm text-blue-500 hover:underline">連結 Email 帳號</button>
                             <button onClick={handleSignOut} className="text-sm text-red-500 hover:underline">登出</button>
                         </div>
                     </div>

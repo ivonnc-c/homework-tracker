@@ -220,7 +220,6 @@
         const [visitorError, setVisitorError] = useState(null);
 
         // --- 登入/註冊/帳號連結 State ---
-        // ⭐️ 【修改】使用 loginMessage state 來顯示成功(綠色)或失敗(紅色)訊息
         const [loginMessage, setLoginMessage] = useState({ type: '', text: '' });
         const [authMode, setAuthMode] = useState('login'); // 'login' or 'register'
         const [email, setEmail] = useState('');
@@ -276,7 +275,6 @@
             
             // =======================================================================
             // ⭐️⭐️⭐️【 中文化設定 】⭐️⭐️⭐️
-            // 告訴 Firebase 盡量使用繁體中文 (台灣) 回傳錯誤訊息
             // =======================================================================
             authInstance.languageCode = 'zh-TW';
             // =======================================================================
@@ -458,7 +456,6 @@
             }
         };
 
-        // ⭐️ 【新增】處理從 Modal 來的「連結 Email 帳號」請求
         const handleLinkEmailAccount = async () => {
             const { email, password } = formState;
             if (!email || !password) {
@@ -493,7 +490,6 @@
         };
 
         const handleSave = async () => {
-            // ⭐️ 【修改】增加 modal.type === 'linkEmail' 的判斷
             if (modal.type === 'linkEmail') {
                 await handleLinkEmailAccount();
                 return;
@@ -620,7 +616,6 @@
         const renderModalTitle = () => {
             const titleMap = { class: '班級', student: '學生', assignment: '作業' };
             if (!modal.type) return '';
-            // ⭐️ 【修改】增加 modal.type === 'linkEmail' 的標題
             if (modal.type === 'linkEmail') return '連結 Email 帳號';
             if (modal.type === 'student' && !modal.data) return '批次新增學生';
             return `${modal.data ? '編輯' : '新增'}${titleMap[modal.type]}`;
@@ -717,7 +712,6 @@
             }
         };
 
-        // ⭐️ 【新增】忘記密碼函式
         const handlePasswordReset = async () => {
             setLoginMessage({ type: '', text: '' });
             if (!email) {
@@ -733,6 +727,28 @@
                     setLoginMessage({ type: 'error', text: '找不到此 Email 帳號，請確認 Email 是否正確。' });
                 } else {
                     setLoginMessage({ type: 'error', text: `重設失敗: ${error.message}` });
+                }
+            }
+        };
+        
+        // ⭐️ 【新增】連結 Google 帳號的函式
+        const handleLinkGoogleAccount = async () => {
+            if (!user) {
+                showNotification('您尚未登入。');
+                return;
+            }
+            const provider = new firebase.auth.GoogleAuthProvider();
+            try {
+                await user.linkWithPopup(provider);
+                showNotification('Google 帳號連結成功！');
+            } catch (error) {
+                console.error("Google 帳號連結失敗:", error.code, error.message);
+                if (error.code === 'auth/credential-already-in-use') {
+                    showNotification('連結失敗：此 Google 帳號已被另一個使用者帳號使用。');
+                } else if (error.code === 'auth/provider-already-linked') {
+                    showNotification('您的帳號已經連結 Google。'); // 備用提示
+                } else {
+                    showNotification(`連結失敗: ${error.message}`);
                 }
             }
         };
@@ -931,7 +947,6 @@
                         class: { name: '', isPublic: false },
                         student: { name: '', studentList: '' },
                         assignment: { title: '', dueDate: now.toISOString().slice(0,16) },
-                        // ⭐️ 【新增】linkEmail 彈窗的預設值
                         linkEmail: { email: user?.email || '', password: '' }
                     };
                     setFormState(defaultState[modal.type]);
@@ -939,7 +954,6 @@
             } else {
                 setFormState({});
             }
-        // ⭐️ 【修改】依賴 user.email，以便在 linkEmail 彈窗中預填
         }, [modal, user]);
 
         const handleFormChange = (e) => {
@@ -988,7 +1002,7 @@
                     <div className="min-h-screen bg-gray-100 font-sans p-4 sm:p-6">
                         <header className="bg-white rounded-xl shadow-lg p-6 mb-6">
                             <h1 className="text-3xl font-extrabold text-indigo-700">作業繳交追蹤總表</h1>
-                            <p className="text-gray-600 mt-2">您正在以訪客模式檢視 <span className="font-bold text-indigo-700">{className}</span> 的作業狀況 (唯讀)</p>
+                            <p className="text-gray-600 mt-2">您正在以訪客模式檢視 <span className="font-bold text-indigo-700">{className}</span> の作業狀況 (唯讀)</p>
                             <p className="text-gray-600 mt-1">最後更新於：{formattedDate}</p>
                                <div className="mt-4 border-t pt-3">
                                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-gray-600">
@@ -1023,7 +1037,6 @@
 
         // =======================================================================
         // ⭐️⭐️⭐️【 登入介面修改區域 】⭐️⭐️⭐️
-        // (已加入「忘記密碼」按鈕 和 loginMessage 提示)
         // =======================================================================
         if (!user) {
             return (
@@ -1076,7 +1089,6 @@
                            使用 Google 帳號登入
                         </button>
                         
-                        {/* ⭐️ 【修改】顯示 loginMessage (成功或失敗) */}
                         {loginMessage.text && (
                             <p className={`mt-4 text-sm p-3 rounded-lg ${loginMessage.type === 'error' ? 'text-red-600 bg-red-100' : 'text-green-600 bg-green-100'}`}>
                                 {loginMessage.text}
@@ -1097,11 +1109,6 @@
             <div className="min-h-screen bg-gray-100 font-sans p-4 sm:p-6">
                 {notification && (<div className="fixed top-5 right-5 bg-green-500 text-white py-2 px-4 rounded-lg shadow-lg z-50 animate-bounce">{notification}</div>)}
                 
-                {/* // =======================================================================
-                // ⭐️⭐️⭐️【 操作說明 Modal 修改 】⭐️⭐️⭐️
-                // (已加入「帳號連結說明」)
-                // =======================================================================
-                */}
                 <Modal isOpen={isHelpModalOpen} title="操作說明" onClose={() => setIsHelpModalOpen(false)} footer={<Button onClick={() => setIsHelpModalOpen(false)}>關閉</Button>}>
                     <div className="space-y-3 text-gray-700">
                         <div>
@@ -1119,12 +1126,12 @@
                                 <li><b>[作業排序]：</b>直接拖曳表格上方的作業標題即可調整欄位順序。</li>
                             </ul>
                         </div>
-                        {/* ⭐️ 【新增】帳號連結說明 */}
+                        {/* ⭐️ 【修改】操作說明的文字調整，使其更準確 */}
                         <div className="border-t pt-3">
                             <h3 className="font-bold mb-1 text-indigo-600">帳號連結說明</h3>
                             <ul className="space-y-1 text-sm list-disc list-inside">
                                 <li><b>情境一 (先 Email 註冊)：</b>
-                                    <br />若您先用 Email 註冊，之後想改用 Google 登入 (Email 需相同)，系統會自動提示您輸入「Email 密碼」以完成帳號綁定。
+                                    <br />若您先用 Email 註冊，之後想改用 Google 登入 (Email 需相同)，系統會自動提示您輸入「Email 密碼」以完成帳號綁定。您也可以登入後，手動點選「連結 Google 帳號」。
                                 </li>
                                 <li><b>情境二 (先 Google 登入)：</b>
                                     <br />若您先用 Google 登入，之後想補上 Email/密碼 (方便在不同裝置登入)，請點選主畫面右上角的「連結 Email 帳號」按鈕來新增。
@@ -1149,14 +1156,12 @@
 
                 <Modal isOpen={!!modal.type} title={renderModalTitle()} onClose={() => setModal({ type: null, data: null })}
                     footer={<>
-                        {/* ⭐️ 【修改】linkEmail 模式下不顯示刪除按鈕 */}
                         {modal.data && modal.type !== 'linkEmail' && <Button onClick={handleDelete} disabled={isDeleting} className="bg-red-600 hover:bg-red-700 mr-auto">{isDeleting ? '刪除中...' : '刪除'}</Button>}
                         <Button onClick={() => setModal({ type: null, data: null })} className="bg-gray-500 hover:bg-gray-600">取消</Button>
                         <Button onClick={handleSave} disabled={isSaving}>{isSaving ? '儲存中...' : (modal.type === 'linkEmail' ? '連結帳號' : '儲存')}</Button>
                     </>}>
                     { modal.type === 'assignment' && <div className="space-y-4"><Input label="作業/項目名稱" id="title" value={formState.title || ''} onChange={handleFormChange} /><Input label="截止日期與時間" id="dueDate" type="datetime-local" value={formState.dueDate || ''} onChange={handleFormChange} /></div> }
                     
-                    { /* ⭐️ 【新增】linkEmail 彈窗的 UI */ }
                     { modal.type === 'linkEmail' && (
                         <div className="space-y-4">
                             <p className="text-sm text-gray-600">將 Email/密碼 連結到您目前的帳號 ({user.email})，未來您就可以使用任一方式登入。</p>
@@ -1187,7 +1192,7 @@
                             )}
                         </div>
                     )}
-                    { modal.type === 'student' && (modal.data ? <Input label="學生座號/姓名" id="name" value={formState.name || ''} onChange={handleFormChange} /> : <Textarea label="學生名單 (一行一個)" id="studentList" value={formState.studentList || ''} onChange={handleFormChange} placeholder="從 Excel 或文件複製名단貼到這裡，例如：&#10;1號 王小明&#10;2號 陳大華&#10;3號 李美麗" />) }
+                    { modal.type === 'student' && (modal.data ? <Input label="學生座號/姓名" id="name" value={formState.name || ''} onChange={handleFormChange} /> : <Textarea label="學生名單 (一行一個)" id="studentList" value={formState.studentList || ''} onChange={handleFormChange} placeholder="從 Excel 或文件複製名單貼到這裡，例如：&#10;1號 王小明&#10;2號 陳大華&#10;3號 李美麗" />) }
                 </Modal>
                 
                 <Modal isOpen={isClearCompletedModalOpen} title="⚠️ 確認清除已完成作業" onClose={() => setIsClearCompletedModalOpen(false)} footer={<>
@@ -1205,7 +1210,7 @@
                 
                 {/* // =======================================================================
                 // ⭐️⭐️⭐️【 Header 修改 】⭐️⭐️⭐️
-                // (已加入「連結 Email 帳號」按鈕)
+                // (已加入「雙向」連結按鈕的判斷邏輯)
                 // =======================================================================
                 */}
                 <header className="bg-white rounded-xl shadow-lg p-6 mb-6">
@@ -1214,10 +1219,19 @@
                             <h1 className="text-3xl font-extrabold text-indigo-700">作業繳交追蹤總表</h1>
                             <button onClick={() => setIsHelpModalOpen(true)} className="text-sm text-indigo-600 hover:underline pt-2">操作說明</button>
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex flex-wrap items-center gap-3">
                             <span className="text-sm text-gray-600">歡迎, {user.displayName || user.email}</span>
-                            {/* ⭐️ 【新增】連結 Email 帳號按鈕 */}
-                            <button onClick={() => setModal({ type: 'linkEmail', data: null })} className="text-sm text-blue-500 hover:underline">連結 Email 帳號</button>
+                            
+                            {/* ⭐️ 【修改】檢查是否有 'password' provider (Email) */}
+                            {!user.providerData.some(p => p.providerId === 'password') && (
+                                <button onClick={() => setModal({ type: 'linkEmail', data: null })} className="text-sm text-blue-500 hover:underline">連結 Email 帳號</button>
+                            )}
+
+                            {/* ⭐️ 【修改】檢查是否有 'google.com' provider */}
+                            {!user.providerData.some(p => p.providerId === 'google.com') && (
+                                <button onClick={handleLinkGoogleAccount} className="text-sm text-green-600 hover:underline">連結 Google 帳號</button>
+                            )}
+                            
                             <button onClick={handleSignOut} className="text-sm text-red-500 hover:underline">登出</button>
                         </div>
                     </div>

@@ -266,18 +266,22 @@
             setAuth(authInstance);
             setDb(firestoreInstance);
             firebase.firestore.setLogLevel('error');
+            console.log("頁面載入：開始檢查 getRedirectResult...");
             authInstance
       .getRedirectResult()
       .then((result) => {
-        if (result.user) {
+          console.log("getRedirectResult .then() - result:", result);
+        if (result && result.user) {
           // 如果是從 Google 登入跳轉回來的，用戶資訊會在 result.user 中
-          console.log("登入成功 (Redirect):", result.user.uid);
+          console.log("登入成功 (來自 Redirect):", result.user.uid);
           // setUser(result.user); // 通常 onAuthStateChanged 會處理，這裡可以不用重複設定
-        }
+        } else {
+              console.log("getRedirectResult .then() - 沒有偵測到 user 物件。");
+            }
       })
       .catch((error) => {
         // 處理跳轉回來後的錯誤
-        console.error("Google 登入 Redirect 結果錯誤:", error);
+        console.error("getRedirectResult .catch() - 錯誤:", error);
          if (error.code === 'auth/account-exists-with-different-credential') {
            setLoginError("此 Google 帳號已被用於其他登入方式，請嘗試其他帳號。");
          } else {
@@ -301,7 +305,9 @@
                     setLoading(p => ({...p, data: false}));
                 });
             } else {
+                console.log("頁面載入：開始設定 onAuthStateChanged 監聽器...");
                const unsub = authInstance.onAuthStateChanged((user) => {
+                   console.log("onAuthStateChanged 觸發 - user:", user ? user.uid : null);
                     setUser(user);
                     setLoading(prev => ({ ...prev, auth: false }));
                 });
@@ -1096,6 +1102,7 @@ const handleSignIn = async () => {
 </script>
 </body>
 </html>
+
 
 
 

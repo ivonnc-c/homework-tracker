@@ -290,15 +290,7 @@
                    setLoginError(`登入失敗: ${error.message}`);
                  }
             });
-      .catch((error) => {
-        // 處理跳轉回來後的錯誤
-        console.error("getRedirectResult .catch() - 錯誤:", error);
-         if (error.code === 'auth/account-exists-with-different-credential') {
-           setLoginError("此 Google 帳號已被用於其他登入方式，請嘗試其他帳號。");
-         } else {
-           setLoginError(`登入失敗: ${error.message}`);
-         }
-      });
+
             if (classIdFromUrl) {
                 setIsVisitorMode(true);
                 setLoading(p => ({...p, auth: false, data: true}));
@@ -1113,6 +1105,7 @@ const handleSignIn = async () => {
 </script>
 </body>
 </html>
+
 
 
 

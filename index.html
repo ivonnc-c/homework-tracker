@@ -134,7 +134,6 @@
         );
     };
 
-    // 🚀【功能 3：紅燈提示】修改 StudentCell，增加 hasUnsubmitted prop
     const StudentCell = ({ student, onEdit, onCopyDefaulterList, isVisitor = false, getSeatNumber, hasUnsubmitted }) => {
         // 決定底色：如果 hasUnsubmitted 為 true，使用淡紅色
         const baseBg = 'bg-gray-50';
@@ -161,7 +160,12 @@
         if (!students || students.length === 0 && (!assignments || assignments.length === 0)) return <div className="p-10 bg-white rounded-xl shadow-lg border-2 border-dashed border-gray-300 text-center text-gray-500 mt-4"><p className="text-xl font-medium mb-2">此班級尚無學生或作業項目</p></div>;
         return (
             <div className="overflow-x-auto bg-white rounded-xl shadow-lg mt-4">
-                <table className="border-collapse table-fixed w-full">
+                {/* // =======================================================================
+                // ⭐️⭐️⭐️【 修正 1：CSS 欄寬問題 】⭐️⭐️⭐️
+                // 移除 "w-full"，讓 "table-fixed" 可以正常運作
+                // =======================================================================
+                */}
+                <table className="border-collapse table-fixed">
                     <thead>
                         <tr>
                             <th className={`border p-1 text-center font-semibold text-gray-700 bg-gray-100 sticky left-0 z-20 ${headerWidthClass}`}>學生座號</th>
@@ -187,8 +191,11 @@
                     </thead>
                     <tbody>
                         {students.map((student, index) => {
-                            // 🚀【功能 3：紅燈提示】在這裡計算該生是否有未繳
-                            const hasUnsubmitted = !isVisitor && assignments.some(assignment => getDisplayStatus(student, assignment) === 'unsubmitted');
+                            // =======================================================================
+                            // ⭐️⭐️⭐️【 修正 2：公開頁面粉紅底色問題 】⭐️⭐️⭐️
+                            // 移除 "!isVisitor &&"，讓訪客頁面也能計算
+                            // =======================================================================
+                            const hasUnsubmitted = assignments.some(assignment => getDisplayStatus(student, assignment) === 'unsubmitted');
                             
                             return (
                                 <tr key={student.id} className={index % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
@@ -273,11 +280,7 @@
             setAuth(authInstance);
             setDb(firestoreInstance);
             
-            // =======================================================================
-            // ⭐️⭐️⭐️【 中文化設定 】⭐️⭐️⭐️
-            // =======================================================================
             authInstance.languageCode = 'zh-TW';
-            // =======================================================================
             
             firebase.firestore.setLogLevel('error');
             
@@ -731,7 +734,6 @@
             }
         };
         
-        // ⭐️ 【新增】連結 Google 帳號的函式
         const handleLinkGoogleAccount = async () => {
             if (!user) {
                 showNotification('您尚未登入。');
@@ -1002,7 +1004,7 @@
                     <div className="min-h-screen bg-gray-100 font-sans p-4 sm:p-6">
                         <header className="bg-white rounded-xl shadow-lg p-6 mb-6">
                             <h1 className="text-3xl font-extrabold text-indigo-700">作業繳交追蹤總表</h1>
-                            <p className="text-gray-600 mt-2">您正在以訪客模式檢視 <span className="font-bold text-indigo-700">{className}</span> の作業狀況 (唯讀)</p>
+                            <p className="text-gray-600 mt-2">您正在以訪客模式檢視 <span className="font-bold text-indigo-700">{className}</span> 的作業狀況 (唯讀)</p>
                             <p className="text-gray-600 mt-1">最後更新於：{formattedDate}</p>
                                <div className="mt-4 border-t pt-3">
                                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-gray-600">
@@ -1035,9 +1037,6 @@
             return null;
         }
 
-        // =======================================================================
-        // ⭐️⭐️⭐️【 登入介面修改區域 】⭐️⭐️⭐️
-        // =======================================================================
         if (!user) {
             return (
                 <div className="flex flex-col items-center justify-center min-h-screen bg-indigo-50 p-4">
@@ -1098,9 +1097,6 @@
                 </div>
             );
         }
-        // =======================================================================
-        // ⭐️⭐️⭐️【 登入介面修改結束 】⭐️⭐️⭐️
-        // =======================================================================
         
         const activeClass = classes.find(c => c.id === activeClassId);
         const activeClassName = activeClass?.name || "班級";
@@ -1126,7 +1122,6 @@
                                 <li><b>[作業排序]：</b>直接拖曳表格上方的作業標題即可調整欄位順序。</li>
                             </ul>
                         </div>
-                        {/* ⭐️ 【修改】操作說明的文字調整，使其更準確 */}
                         <div className="border-t pt-3">
                             <h3 className="font-bold mb-1 text-indigo-600">帳號連結說明</h3>
                             <ul className="space-y-1 text-sm list-disc list-inside">
@@ -1208,11 +1203,6 @@
                     </div>
                 </Modal>
                 
-                {/* // =======================================================================
-                // ⭐️⭐️⭐️【 Header 修改 】⭐️⭐️⭐️
-                // (已加入「雙向」連結按鈕的判斷邏輯)
-                // =======================================================================
-                */}
                 <header className="bg-white rounded-xl shadow-lg p-6 mb-6">
                     <div className="flex flex-wrap justify-between items-center gap-4">
                         <div className="flex items-center gap-4">
@@ -1222,12 +1212,10 @@
                         <div className="flex flex-wrap items-center gap-3">
                             <span className="text-sm text-gray-600">歡迎, {user.displayName || user.email}</span>
                             
-                            {/* ⭐️ 【修改】檢查是否有 'password' provider (Email) */}
                             {!user.providerData.some(p => p.providerId === 'password') && (
                                 <button onClick={() => setModal({ type: 'linkEmail', data: null })} className="text-sm text-blue-500 hover:underline">連結 Email 帳號</button>
                             )}
 
-                            {/* ⭐️ 【修改】檢查是否有 'google.com' provider */}
                             {!user.providerData.some(p => p.providerId === 'google.com') && (
                                 <button onClick={handleLinkGoogleAccount} className="text-sm text-green-600 hover:underline">連結 Google 帳號</button>
                             )}

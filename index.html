@@ -140,7 +140,7 @@
         const warningBg = hasUnsubmitted ? 'bg-red-100' : baseBg;
 
         return (
-            <th className={`border p-1 text-sm text-center font-semibold text-gray-800 sticky left-0 z-10 ${isVisitor ? 'w-16' : 'w-32'} ${warningBg}`}>
+            <th className={`border p-1 text-sm text-center font-semibold text-gray-800 sticky left-0 z-10 ${isVisitor ? 'w-20' : 'w-32'} ${warningBg}`}>
                 <div className="flex items-center justify-between group px-2">
                     <span className={isVisitor ? '' : 'cursor-pointer hover:underline'} onClick={isVisitor ? null : onEdit}>
                         {isVisitor ? getSeatNumber(student.name) : student.name}
@@ -156,7 +156,7 @@
     };
 
     const AssignmentTable = ({ students, assignments, onStatusChange, getDisplayStatus, onEditStudent, onEditAssignment, onCopyUnsubmitted, onCopyStudentDefaulterList, handleDragStart, handleDragOver, handleDrop, draggedAssignmentId, now, isVisitor = false, getSeatNumber }) => {
-        const headerWidthClass = isVisitor ? 'w-16' : 'w-32';
+        const headerWidthClass = isVisitor ? 'w-20' : 'w-32';
         if (!students || students.length === 0 && (!assignments || assignments.length === 0)) return <div className="p-10 bg-white rounded-xl shadow-lg border-2 border-dashed border-gray-300 text-center text-gray-500 mt-4"><p className="text-xl font-medium mb-2">此班級尚無學生或作業項目</p></div>;
         return (
             <div className="overflow-x-auto bg-white rounded-xl shadow-lg mt-4">
@@ -1318,3 +1318,4 @@
 </script>
 </body>
 </html>
+

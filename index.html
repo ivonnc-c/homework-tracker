@@ -160,11 +160,6 @@
         if (!students || students.length === 0 && (!assignments || assignments.length === 0)) return <div className="p-10 bg-white rounded-xl shadow-lg border-2 border-dashed border-gray-300 text-center text-gray-500 mt-4"><p className="text-xl font-medium mb-2">此班級尚無學生或作業項目</p></div>;
         return (
             <div className="overflow-x-auto bg-white rounded-xl shadow-lg mt-4">
-                {/* // =======================================================================
-                // ⭐️⭐️⭐️【 修正 1：CSS 欄寬問題 】⭐️⭐️⭐️
-                // 移除 "w-full"，讓 "table-fixed" 可以正常運作
-                // =======================================================================
-                */}
                 <table className="border-collapse table-fixed">
                     <thead>
                         <tr>
@@ -191,10 +186,6 @@
                     </thead>
                     <tbody>
                         {students.map((student, index) => {
-                            // =======================================================================
-                            // ⭐️⭐️⭐️【 修正 2：公開頁面粉紅底色問題 】⭐️⭐️⭐️
-                            // 移除 "!isVisitor &&"，讓訪客頁面也能計算
-                            // =======================================================================
                             const hasUnsubmitted = assignments.some(assignment => getDisplayStatus(student, assignment) === 'unsubmitted');
                             
                             return (
@@ -868,12 +859,10 @@
             copyToClipboard(fullReport.trim());
         };
 
-// 🚀 【功能 2：匯出催繳總表 (for 合併列印)】- 移除空值檢查
         const handleExportMailMergeCSV = () => {
             const studentSet = isVisitorMode ? (visitorData?.students || []) : students;
             const dataSet = isVisitorMode ? (visitorData?.assignments || []) : sortedAssignments;
 
-            // 修正點：如果沒有學生或作業，直接返回 (保留這個基本檢查)
             if (!studentSet.length || !dataSet.length) {
                 showNotification("沒有資料可匯出！");
                 return;
@@ -900,8 +889,6 @@
                 .filter(Boolean)
                 .join('');
 
-            // 【移除】原本檢查 csvRows 是否為空的區塊已移除
-
             const csvContent = csvHeader + csvRows;
 
             const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8-sig;' });
@@ -914,7 +901,6 @@
             link.click();
             document.body.removeChild(link);
 
-            // 【保留】下載開始的提示
             showNotification("CSV 催繳總表已開始下載！");
         };
 
@@ -932,23 +918,35 @@
             copyToClipboard(text);
         };
 
+        // =======================================================================
+        // ⭐️⭐️⭐️【 修正 3：預設時間為 15:00 】⭐️⭐️⭐️
+        // 在 useEffect 鉤子中修改新增作業時的預設 dueDate
+        // =======================================================================
         useEffect(() => {
             if (modal.type) {
                 if (modal.data) {
+                    // --- 編輯模式 ---
                     let formData = {...modal.data};
                     if(modal.type === 'assignment' && formData.dueDate && (formData.dueDate.seconds || typeof formData.dueDate === 'string')) {
                         const d = new Date(formData.dueDate.seconds ? formData.dueDate.seconds * 1000 : formData.dueDate);
-                        d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+                        // 修正：在轉換為 ISO 字串前，不需要減去 timezoneOffset
+                        // 因為 toISOString 本身就是 UTC 時間，datetime-local input 會自動處理本地時區
                         formData.dueDate = d.toISOString().slice(0, 16);
                     }
                     setFormState(formData);
                 } else {
-                    const now = new Date();
-                    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+                    // --- 新增模式 ---
+                    // ⭐️ 【修改】設定預設時間為 15:00
+                    const defaultDueDate = new Date();
+                    defaultDueDate.setHours(17, 0, 0, 0); // 設定時間為下午 5:00
+                    // 修正：同樣不需要減去 timezoneOffset
+                    const formattedDefaultDueDate = defaultDueDate.toISOString().slice(0, 16);
+
                     const defaultState = {
                         class: { name: '', isPublic: false },
                         student: { name: '', studentList: '' },
-                        assignment: { title: '', dueDate: now.toISOString().slice(0,16) },
+                        // ⭐️ 【修改】使用新的預設 dueDate
+                        assignment: { title: '', dueDate: formattedDefaultDueDate },
                         linkEmail: { email: user?.email || '', password: '' }
                     };
                     setFormState(defaultState[modal.type]);
@@ -1009,11 +1007,11 @@
                                <div className="mt-4 border-t pt-3">
                                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-gray-600">
                                     <span className="font-bold">圖例:</span>
-                                    <div className="flex items-center gap-1"><div className="w-4 h-4 rounded-full bg-green-500"></div><span>準時</span></div>
-                                    <div className="flex items-center gap-1"><div className="w-4 h-4 rounded-full bg-yellow-500"></div><span>補交</span></div>
-                                    <div className="flex items-center gap-1"><div className="w-4 h-4 rounded-full bg-red-500"></div><span>逾期</span></div>
-                                    <div className="flex items-center gap-1"><div className="w-4 h-4 rounded-full bg-white border-2 border-gray-400"></div><span>未檢</span></div>
-                                    <div className="flex items-center gap-1"><div className="w-4 h-4 rounded-full bg-gray-500"></div><span>忽略</span></div>
+                                    <div className="flex items-center gap-1"><div className="w-4 h-4 rounded-full bg-green-500"></div><span>準時繳交</span></div>
+                                    <div className="flex items-center gap-1"><div className="w-4 h-4 rounded-full bg-yellow-500"></div><span>補交完成</span></div>
+                                    <div className="flex items-center gap-1"><div className="w-4 h-4 rounded-full bg-red-500"></div><span>逾期未交</span></div>
+                                    <div className="flex items-center gap-1"><div className="w-4 h-4 rounded-full bg-white border-2 border-gray-400"></div><span>尚未檢查</span></div>
+                                    <div className="flex items-center gap-1"><div className="w-4 h-4 rounded-full bg-gray-500"></div><span>忽略不計</span></div>
                                 </div>
                             </div>
                         </header>
@@ -1318,4 +1316,3 @@
 </script>
 </body>
 </html>
-

@@ -1017,8 +1017,8 @@
                         </header>
                         <main>
                             <div className="flex justify-end gap-4 mb-2">
-                                <Button onClick={() => handleCopyAllUnsubmitted()} className="bg-pink-500 hover:bg-pink-600">複製全班未繳總表</Button>
-                                <Button onClick={() => handleExportMailMergeCSV()} className="bg-green-600 hover:bg-green-700">匯出催繳總表 (CSV)</Button>
+                                <Button onClick={() => handleCopyAllUnsubmitted()} className="bg-pink-500 hover:bg-pink-600">未繳總表</Button>
+                                <Button onClick={() => handleExportMailMergeCSV()} className="bg-green-600 hover:bg-green-700">匯出清單 (CSV)</Button>
                             </div>
                             <AssignmentTable 
                                 students={students || []} 
@@ -1316,3 +1316,4 @@
 </script>
 </body>
 </html>
+
